@@ -1,0 +1,25 @@
+node_modules/
+vclone/apps/web/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local databases and uploads
+*.db
+uploads/
+
+# Environment files
+.env
+.env.*
+
+# macOS / editor
+.DS_Store
+.vscode/
