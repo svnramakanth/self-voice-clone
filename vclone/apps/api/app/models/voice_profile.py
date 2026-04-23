@@ -12,6 +12,7 @@ class VoiceProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     enrollment_id: Mapped[str] = mapped_column(ForeignKey("enrollments.id"), index=True)
     name: Mapped[str] = mapped_column(String(120), default="My Voice")
     transcript_text: Mapped[str] = mapped_column(Text, default="")
+    source_audio_path: Mapped[str] = mapped_column(String(500), default="")
     sample_audio_path: Mapped[str] = mapped_column(String(500), default="")
     transcript_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     profile_version: Mapped[int] = mapped_column(default=1)

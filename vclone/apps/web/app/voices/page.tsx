@@ -5,28 +5,43 @@ export default async function VoicesPage() {
   const profiles = await listVoiceProfiles().catch(() => ({ items: [] }));
 
   return (
-    <SectionCard title="Saved voice profiles">
-      <p className="muted">Step 2: confirm your saved profile exists here. Then open the Generate page.</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>ID</th>
-            <th>Status</th>
-            <th>Engine</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(profiles.items ?? []).map((item: any) => (
-            <tr key={item.id}>
-              <td>{item.name}</td>
-              <td>{item.id}</td>
-              <td><span className="pill">{item.status}</span></td>
-              <td>{item.engine_family}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </SectionCard>
+    <div className="grid">
+      <SectionCard title="Saved voice profiles" kicker="Step 2">
+        <div className="page-header">
+          <h1>Your saved voices</h1>
+          <p className="muted">Every uploaded profile appears here before you generate text from it.</p>
+        </div>
+        <p className="muted">Confirm your saved profile exists here, then move to the Generate page.</p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Engine</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(profiles.items ?? []).map((item: any) => (
+                <tr key={item.id}>
+                  <td>{item.name}</td>
+                  <td><code>{item.id}</code></td>
+                  <td><span className="pill">{item.status}</span></td>
+                  <td>{item.engine_family}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="What this page tells you" kicker="Quick note">
+        <div className="helper">
+          <strong>If the profile is visible, your upload step worked.</strong>
+          <div className="muted">You can now go to Generate and pick this profile from the dropdown.</div>
+        </div>
+      </SectionCard>
+    </div>
   );
 }

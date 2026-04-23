@@ -9,7 +9,13 @@ dependencies = [
   "sqlalchemy>=2.0.30",
   "pydantic>=2.7.0",
   "pydantic-settings>=2.2.1",
-  "python-multipart>=0.0.9"
+  "python-multipart>=0.0.9",
+  "TTS>=0.22.0"
+]
+
+[project.optional-dependencies]
+audio_eval = [
+  "faster-whisper>=1.0.0"
 ]
 
 [build-system]

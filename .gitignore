@@ -23,3 +23,13 @@ uploads/
 # macOS / editor
 .DS_Store
 .vscode/
+
+# Next.js / build caches
+vclone/apps/web/.next/
+dist/
+build/
+
+# Local temp artifacts
+*.log
+tmp/
+temp/

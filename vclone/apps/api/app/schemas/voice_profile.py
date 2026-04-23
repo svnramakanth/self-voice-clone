@@ -16,6 +16,7 @@ class SimpleVoiceProfileResponse(BaseModel):
     voice_profile_id: str
     status: str
     name: str
+    readiness_report: dict | None = None
 
 
 class VoiceProfileDetail(BaseModel):

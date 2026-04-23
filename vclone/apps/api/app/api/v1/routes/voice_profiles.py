@@ -25,9 +25,6 @@ async def create_simple_voice_profile(
     transcript_file: UploadFile | None = File(default=None),
     db: Session = Depends(get_db_session),
 ) -> SimpleVoiceProfileResponse:
-    if not transcript_text.strip() and transcript_file is None:
-        raise HTTPException(status_code=400, detail="Provide transcript text or an SRT/TXT transcript file")
-
     service = VoiceProfileService(db)
     service.ensure_schema()
     try:
@@ -41,7 +38,12 @@ async def create_simple_voice_profile(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SimpleVoiceProfileResponse(voice_profile_id=profile.id, status=profile.status, name=profile.name)
+    return SimpleVoiceProfileResponse(
+        voice_profile_id=profile.id,
+        status=profile.status,
+        name=profile.name,
+        readiness_report=json.loads(profile.readiness_report_json or "{}"),
+    )
 
 
 @router.post("/create/from-enrollment/{enrollment_id}", response_model=VoiceProfileResponse)

@@ -15,7 +15,11 @@ def submit_synthesis(payload: SynthesisRequest, db: Session = Depends(get_db_ses
         job = SynthesisService(db).create_job(**payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return SynthesisJobResponse(job_id=job.id, status=job.status.upper())
+    return SynthesisJobResponse(
+        job_id=job.id,
+        status=job.status.upper(),
+        message="Synthesis job created. Final mode now fails closed unless the exported master validates as native.",
+    )
 
 
 @router.get("/{job_id}/preview", response_model=SynthesisPreviewResponse)
