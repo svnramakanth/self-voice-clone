@@ -16,13 +16,6 @@
       "static/chunks/231-22ff229b513d9822.js",
       "static/chunks/app/layout-7b255ffc39a7d224.js"
     ],
-    "/synthesis/page": [
-      "static/chunks/webpack-744ee3f145013e34.js",
-      "static/chunks/4bd1b696-239c50da69b5278f.js",
-      "static/chunks/215-624c6edaceb5ec52.js",
-      "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/chunks/app/synthesis/page-9b403de17c901873.js"
-    ],
     "/page": [
       "static/chunks/webpack-744ee3f145013e34.js",
       "static/chunks/4bd1b696-239c50da69b5278f.js",
@@ -38,12 +31,19 @@
       "static/chunks/main-app-bd37fd40853e069b.js",
       "static/chunks/app/voices/page-5e5bab3b47d805df.js"
     ],
+    "/synthesis/page": [
+      "static/chunks/webpack-744ee3f145013e34.js",
+      "static/chunks/4bd1b696-239c50da69b5278f.js",
+      "static/chunks/215-624c6edaceb5ec52.js",
+      "static/chunks/main-app-bd37fd40853e069b.js",
+      "static/chunks/app/synthesis/page-9b403de17c901873.js"
+    ],
     "/enrollment/page": [
       "static/chunks/webpack-744ee3f145013e34.js",
       "static/chunks/4bd1b696-239c50da69b5278f.js",
       "static/chunks/215-624c6edaceb5ec52.js",
       "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/chunks/app/enrollment/page-4a31ac52a2fbc92b.js"
+      "static/chunks/app/enrollment/page-0b75ceb53e842361.js"
     ]
   }
 }

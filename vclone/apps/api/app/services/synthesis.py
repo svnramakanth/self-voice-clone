@@ -135,7 +135,7 @@ class SynthesisService:
                 sample_rate_hz=int(delivery_request["sample_rate_hz"]),
                 channels=int(delivery_request["channels"]),
             )
-            asr_backcheck = self.asr_backcheck.evaluate(expected_text=normalized, chunks=chunks)
+            asr_backcheck = self.asr_backcheck.evaluate(expected_text=normalized, chunks=chunks, audio_path=str(output_path))
             evaluation_report = self.evaluation.evaluate(
                 audio_path=str(output_path),
                 reference_path=profile.sample_audio_path,

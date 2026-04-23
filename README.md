@@ -24,14 +24,14 @@ That means:
 - final-mode synthesis now fails closed by default when the selected engine cannot produce a true native master,
 - enrollment now preserves the uploaded source recording separately from the XTTS conditioning derivative,
 - mastering validation now includes measured integrated loudness and true-peak reporting when ffmpeg analysis is available,
-- enrollment now stores basic fallback transcription metadata, alignment estimates, and profile quality scoring,
+- enrollment now stores real faster-whisper transcription when available, alignment estimates, and profile quality scoring,
 - synthesis now records engine capabilities and a preflight long-form QC report before rendering,
 - preview and final synthesis modes now resolve through an engine registry so the API can report engine capabilities explicitly,
 - Phase B now includes distinct preview/final engine identities with per-request engine-selection warnings and capability reporting,
 - B1-B4 now include engine selection rationale, fail-closed native-master enforcement, and a premium final-engine plugin slot,
-- Phase C now adds expanded text normalization, pronunciation lexicon overrides, heuristic ASR back-check, and selective regeneration planning,
+- Phase C now adds expanded text normalization, pronunciation lexicon overrides, faster-whisper-backed ASR back-check when available, and selective regeneration planning,
 - Phase D now adds release-grade mastering summaries, stronger delivery validation, and native-vs-derived truth reporting,
-- Phase E now adds heuristic evaluation reports for similarity, intelligibility/WER, artifact scoring, human listening rubric, and golden-sample regression checks,
+- Phase E now adds dependency-aware evaluation reports for similarity, intelligibility/WER, artifact scoring, human listening rubric, and golden-sample regression checks,
 - but XTTS dependencies must be installed successfully in your API environment for real inference to work.
 
 ## Phase 1 conditioning rules
@@ -89,8 +89,9 @@ Then:
 - click **Save my voice profile**.
 
 The enrollment response now includes a readiness report with:
-- fallback transcription metadata,
+- transcription metadata,
 - alignment confidence,
+- measured alignment metadata,
 - estimated segment count,
 - quality scoring,
 - adaptation candidacy hint.
@@ -120,8 +121,8 @@ The synthesis response now includes:
 - checksum,
 - Spotify-readiness report,
 - release-grade delivery summary,
-- heuristic ASR back-check,
-- heuristic evaluation report,
+- ASR back-check,
+- evaluation report,
 - engine capability metadata,
 - engine-selection warnings,
 - engine-selection rationale,
@@ -129,6 +130,23 @@ The synthesis response now includes:
 - preflight chunk QC report.
 
 `require_native_master=true` is now the default behavior for final delivery, so the API fails closed if the selected engine cannot satisfy the requested final delivery natively.
+
+## UI guide
+
+The web UI now contains an in-app documentation section on the home page explaining:
+- how enrollment works,
+- how backend analysis works,
+- how synthesis/mastering works,
+- and the current XTTS limitation for native Spotify-grade masters.
+
+Recommended usage flow:
+1. Start the backend server.
+2. Start the frontend server.
+3. Open `/enrollment` and upload a clean voice sample.
+4. Review the returned readiness report.
+5. Open `/voices` and confirm the saved profile exists.
+6. Open `/synthesis`, choose the profile, enter text, and generate output.
+7. Review the delivery report before publishing anything.
 
 ## Current simplified flow
 
@@ -157,7 +175,7 @@ Synthesis now targets XTTS v2 inference using:
 
 Important limitation:
 - if XTTS natively renders mono / lower-sample-rate audio, exporting a 44.1/48 kHz stereo WAV/FLAC file is still only a **derived distribution master**, not a native high-resolution stereo capture. Final mode now rejects that output by default instead of treating it as release-ready.
-- current transcription/alignment/quality-scoring is heuristic scaffolding for pipeline shape; it is not yet equivalent to a production WhisperX + speaker-verification stack.
+- current transcription/back-check now attempts faster-whisper first, and speaker verification now attempts SpeechBrain first, but the repo still does not yet equal a full production WhisperX + premium final-render stack.
 - Phase B is now implemented through B1-B4 in code: strict capability enforcement, stronger final-engine behavior, a configurable premium XTTS final engine profile, and richer UI/API reporting. However, even the premium XTTS path is still limited by XTTS’s native mono / lower-rate rendering ceiling.
 - Phases C/D/E are implemented as a strong in-repo framework with dependency hooks for later replacement by real ASR, artifact models, and speaker-embedding evaluation. The current scores are useful for pipeline shaping, but they are not equal to external benchmark-grade evaluation yet.
 

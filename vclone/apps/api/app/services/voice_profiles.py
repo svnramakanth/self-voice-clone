@@ -91,13 +91,18 @@ class VoiceProfileService:
             transcript_path=transcript_path_str,
             duration_seconds=processed_audio.duration_seconds,
         )
+        measured_alignment = self.alignment.analyze_audio_alignment(
+            audio_path=processed_audio.processed_path,
+            transcript_text=resolved_transcript_text,
+        )
         transcript_confidence = transcription["confidence"] if transcription else (0.88 if resolved_transcript_text else 0.25)
         quality = self.quality_scoring.score(
             audio_path=str(audio_path),
             duration_seconds=processed_audio.duration_seconds,
-            alignment_confidence=alignment.confidence,
+            alignment_confidence=max(alignment.confidence, float(measured_alignment.get("confidence", 0.0) or 0.0)),
             transcript_confidence=transcript_confidence,
-            segment_count=alignment.segment_count,
+            segment_count=max(alignment.segment_count, int(measured_alignment.get("segment_count", 0) or 0)),
+            source_audio_path=str(audio_path),
         )
 
         profile = VoiceProfile(
@@ -120,6 +125,7 @@ class VoiceProfileService:
                     "warning_level": processed_audio.warning_level,
                     "guidance": processed_audio.guidance,
                     "alignment": alignment.to_dict(),
+                    "measured_alignment": measured_alignment,
                     "quality": quality.to_dict(),
                     "transcription": transcription or {
                         "provider": "provided",

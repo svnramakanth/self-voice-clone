@@ -31,6 +31,11 @@ export default async function VoicesPage() {
                   <td>{item.engine_family}</td>
                 </tr>
               ))}
+              {!(profiles.items ?? []).length ? (
+                <tr>
+                  <td colSpan={4} className="muted">No profiles yet. Create one on the enrollment page first.</td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -39,7 +44,7 @@ export default async function VoicesPage() {
       <SectionCard title="What this page tells you" kicker="Quick note">
         <div className="helper">
           <strong>If the profile is visible, your upload step worked.</strong>
-          <div className="muted">You can now go to Generate and pick this profile from the dropdown.</div>
+          <div className="muted">You can now go to Generate and pick this profile from the dropdown. The status and engine column come directly from the backend voice profile response.</div>
         </div>
       </SectionCard>
     </div>

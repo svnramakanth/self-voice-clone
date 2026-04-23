@@ -7,6 +7,7 @@ import { SectionCard } from "../../components/SectionCard";
 export default function EnrollmentPage() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div className="grid two-col">
@@ -22,15 +23,21 @@ export default function EnrollmentPage() {
           onSubmit={async (event) => {
             event.preventDefault();
             setLoading(true);
+            setError(null);
             const data = new FormData(event.currentTarget);
-            const response = await createSimpleVoiceProfile({
-              name: String(data.get("name") || "My Voice"),
-              transcript_text: String(data.get("transcript_text") || ""),
-              audio_file: data.get("audio_file") as File,
-              transcript_file: (data.get("transcript_file") as File | null) || null,
-            });
-            setResult(response);
-            setLoading(false);
+            try {
+              const response = await createSimpleVoiceProfile({
+                name: String(data.get("name") || "My Voice"),
+                transcript_text: String(data.get("transcript_text") || ""),
+                audio_file: data.get("audio_file") as File,
+                transcript_file: (data.get("transcript_file") as File | null) || null,
+              });
+              setResult(response);
+            } catch (submitError) {
+              setError(submitError instanceof Error ? submitError.message : "Enrollment failed");
+            } finally {
+              setLoading(false);
+            }
           }}
         >
           <label>
@@ -51,6 +58,7 @@ export default function EnrollmentPage() {
           </label>
           <button type="submit" disabled={loading}>{loading ? "Saving..." : "Save my voice profile"}</button>
         </form>
+        {error ? <div className="result-box"><pre>{error}</pre></div> : null}
         {result ? <div className="result-box"><pre>{JSON.stringify(result, null, 2)}</pre></div> : null}
       </SectionCard>
 
@@ -75,6 +83,13 @@ export default function EnrollmentPage() {
             <div>
               <strong>What next?</strong>
               <div className="muted">After saving, go to <code>Saved Profiles</code>, then open <code>Generate</code>.</div>
+            </div>
+          </div>
+          <div className="feature-item">
+            <div className="feature-badge">4</div>
+            <div>
+              <strong>What the backend will actually do.</strong>
+              <div className="muted">The API stores your original upload, creates a conditioning WAV for XTTS, and returns readiness details including transcription, alignment, quality, and storage metadata.</div>
             </div>
           </div>
         </div>

@@ -1,12 +1,25 @@
+from __future__ import annotations
+
 from pathlib import Path
+import shutil
 import subprocess
+
+from app.core.config import get_settings
 
 
 class AutoTranscriptionService:
+    def __init__(self) -> None:
+        self.settings = get_settings()
+        self.ffprobe_path = shutil.which("ffprobe") or "ffprobe"
+
     def transcribe(self, audio_path: str) -> dict:
         path = Path(audio_path)
         if not path.exists():
             raise ValueError("Audio file not found for transcription")
+
+        whisper_result = self._transcribe_with_faster_whisper(path)
+        if whisper_result is not None:
+            return whisper_result
 
         return {
             "provider": "fallback",
@@ -14,7 +27,58 @@ class AutoTranscriptionService:
             "confidence": 0.35,
             "segments": self._estimate_segments(path),
             "notes": [
-                "No real ASR backend is installed yet. This fallback transcript is metadata-only and not suitable for premium adaptation.",
+                "faster-whisper was unavailable, so a metadata-only fallback transcript was used.",
+            ],
+        }
+
+    def _transcribe_with_faster_whisper(self, audio_path: Path) -> dict | None:
+        try:
+            from faster_whisper import WhisperModel
+        except Exception:
+            return None
+
+        device = self._resolve_device()
+        compute_type = self._resolve_compute_type(device)
+        try:
+            model = WhisperModel(self.settings.asr_model_size, device=device, compute_type=compute_type)
+            segments, info = model.transcribe(str(audio_path), beam_size=self.settings.asr_beam_size)
+            collected_segments = list(segments)
+        except Exception as exc:
+            return {
+                "provider": "faster-whisper",
+                "text": self._fallback_text(audio_path),
+                "confidence": 0.25,
+                "segments": self._estimate_segments(audio_path),
+                "notes": [f"faster-whisper was configured but transcription failed: {exc}"],
+            }
+
+        text = " ".join((segment.text or "").strip() for segment in collected_segments).strip()
+        language_probability = float(getattr(info, "language_probability", 0.0) or 0.0)
+        mean_no_speech = 0.0
+        if collected_segments:
+            no_speech_scores = [float(getattr(segment, "no_speech_prob", 0.0) or 0.0) for segment in collected_segments]
+            mean_no_speech = sum(no_speech_scores) / len(no_speech_scores)
+
+        confidence = max(0.2, min(0.98, (language_probability * 0.7) + ((1.0 - mean_no_speech) * 0.3)))
+        segment_payload = [
+            {
+                "index": index + 1,
+                "start_seconds": round(float(segment.start), 2),
+                "end_seconds": round(float(segment.end), 2),
+                "confidence": round(max(0.05, 1.0 - float(getattr(segment, "no_speech_prob", 0.0) or 0.0)), 3),
+                "text": (segment.text or "").strip(),
+            }
+            for index, segment in enumerate(collected_segments)
+        ]
+
+        return {
+            "provider": "faster-whisper",
+            "text": text,
+            "confidence": round(confidence, 3),
+            "segments": segment_payload,
+            "language": getattr(info, "language", None),
+            "notes": [
+                f"Real ASR completed with faster-whisper model '{self.settings.asr_model_size}' on device '{device}'."
             ],
         }
 
@@ -56,6 +120,22 @@ class AutoTranscriptionService:
         except Exception:
             pass
         return 0.0
+
+    def _resolve_device(self) -> str:
+        if self.settings.asr_device != "auto":
+            return self.settings.asr_device
+
+        try:
+            import torch
+
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            return "cpu"
+
+    def _resolve_compute_type(self, device: str) -> str:
+        if self.settings.asr_compute_type != "auto":
+            return self.settings.asr_compute_type
+        return "float16" if device == "cuda" else "int8"
 
     def _fallback_text(self, audio_path: Path) -> str:
         try:

@@ -5,6 +5,8 @@ from pathlib import Path
 import math
 import re
 
+from app.services.transcription import AutoTranscriptionService
+
 
 @dataclass
 class AlignmentResult:
@@ -21,6 +23,9 @@ class AlignmentResult:
 
 
 class AlignmentService:
+    def __init__(self) -> None:
+        self.transcriber = AutoTranscriptionService()
+
     def align(self, *, transcript_text: str, transcript_path: str | None, duration_seconds: float) -> AlignmentResult:
         provided_text = (transcript_text or "").strip()
         file_text = self._load_text(transcript_path)
@@ -59,6 +64,36 @@ class AlignmentService:
             word_count=word_count,
             notes=notes,
         )
+
+    def analyze_audio_alignment(self, *, audio_path: str, transcript_text: str) -> dict:
+        transcription = self.transcriber.transcribe(audio_path)
+        observed_text = transcription.get("text", "")
+        observed_segments = transcription.get("segments", [])
+        normalized_reference = self._normalize(transcript_text)
+        normalized_observed = self._normalize(observed_text)
+        reference_words = normalized_reference.split()
+        observed_words = normalized_observed.split()
+        word_ratio = (len(observed_words) / len(reference_words)) if reference_words else 0.0
+        confidence = 0.0
+        notes: list[str] = []
+
+        if transcription.get("provider") == "faster-whisper":
+            confidence = min(0.98, max(0.2, float(transcription.get("confidence", 0.0) or 0.0)))
+            if reference_words and (word_ratio < 0.65 or word_ratio > 1.45):
+                confidence = max(0.2, confidence - 0.2)
+                notes.append("Observed ASR transcript length diverges materially from the supplied transcript.")
+        else:
+            confidence = 0.35 if normalized_reference else 0.15
+            notes.append("Real ASR alignment is unavailable; falling back to heuristic transcript-length analysis.")
+
+        return {
+            "provider": transcription.get("provider"),
+            "confidence": round(confidence, 3),
+            "observed_text": observed_text,
+            "segment_count": len(observed_segments) or max(1, math.ceil(duration_seconds / 8)) if (duration_seconds := 0) else len(observed_segments),
+            "segments": observed_segments,
+            "notes": notes,
+        }
 
     def _load_text(self, transcript_path: str | None) -> str:
         if not transcript_path:
