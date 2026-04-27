@@ -61,6 +61,7 @@ If XTTS installation is heavy on your machine, CPU inference may still work but 
 
 Backend docs:
 - http://localhost:8000/docs
+- http://localhost:8000/v1/system/capabilities
 
 ### 2) Start frontend
 
@@ -69,7 +70,8 @@ Open a second terminal:
 ```bash
 cd /Users/ramakanth/pers/self-voice-clone/vclone/apps/web
 npm install
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/v1 npm run dev
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/v1 
+npm run dev
 ```
 
 Frontend:
@@ -128,6 +130,16 @@ The synthesis response now includes:
 - engine-selection rationale,
 - preview/final engine registry metadata,
 - preflight chunk QC report.
+
+The backend now also exposes system diagnostics at:
+- `GET /health`
+- `GET /v1/system/capabilities`
+
+Use the capabilities endpoint to see:
+- preview/final engine runtime availability,
+- dependency status,
+- current final-delivery limitations,
+- and whether a true native distribution master path exists.
 
 `require_native_master=true` is now the default behavior for final delivery, so the API fails closed if the selected engine cannot satisfy the requested final delivery natively.
 

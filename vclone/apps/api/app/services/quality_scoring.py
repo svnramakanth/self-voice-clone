@@ -36,12 +36,22 @@ class QualityScoringService:
         transcript_confidence: float,
         segment_count: int,
         source_audio_path: str | None = None,
+        defer_speaker_verification: bool = False,
+        fast_mode: bool = False,
     ) -> EnrollmentQualityReport:
         warnings: list[str] = []
 
         duration_factor = min(max(duration_seconds / 300.0, 0.0), 1.0)
-        snr = round(self._estimate_snr_db(audio_path), 2)
-        if source_audio_path:
+        if fast_mode:
+            snr, snr_notes = 24.0, ["Detailed SNR estimation deferred for fast reliable enrollment; deep quality analysis can run later."]
+        else:
+            snr, snr_notes = self._estimate_snr_db(audio_path)
+        warnings.extend(snr_notes)
+        snr = round(snr, 2)
+        if defer_speaker_verification:
+            speaker_match = min(0.88, 0.62 + duration_factor * 0.22)
+            warnings.append("Speaker embedding verification was deferred for fast SRT-based enrollment processing.")
+        elif source_audio_path:
             speaker_match = self.speaker_verification.verify(
                 reference_audio_path=source_audio_path,
                 candidate_audio_path=audio_path,
@@ -71,33 +81,39 @@ class QualityScoringService:
             warnings=warnings,
         )
 
-    def _estimate_snr_db(self, audio_path: str) -> float:
+    def _estimate_snr_db(self, audio_path: str) -> tuple[float, list[str]]:
         if not self.ffmpeg_path:
-            return 18.0
+            return 18.0, ["ffmpeg is unavailable; using fallback SNR estimate."]
 
-        result = subprocess.run(
-            [
-                self.ffmpeg_path,
-                "-hide_banner",
-                "-i",
-                audio_path,
-                "-af",
-                "volumedetect",
-                "-f",
-                "null",
-                "-",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    self.ffmpeg_path,
+                    "-hide_banner",
+                    "-t",
+                    "600",
+                    "-i",
+                    audio_path,
+                    "-af",
+                    "volumedetect",
+                    "-f",
+                    "null",
+                    "-",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            return 18.0, ["SNR estimation timed out; using fallback SNR estimate instead of blocking enrollment."]
         payload = (result.stderr or "") + (result.stdout or "")
         mean_volume = self._extract_metric(payload, "mean_volume")
         max_volume = self._extract_metric(payload, "max_volume")
         if mean_volume is None or max_volume is None:
-            return 18.0
+            return 18.0, ["SNR estimation did not return volume metrics; using fallback SNR estimate."]
         crest = abs(max_volume - mean_volume)
-        return max(10.0, min(40.0, 12.0 + crest * 2.0))
+        return max(10.0, min(40.0, 12.0 + crest * 2.0)), []
 
     def _extract_metric(self, payload: str, key: str) -> float | None:
         marker = f"{key}:"

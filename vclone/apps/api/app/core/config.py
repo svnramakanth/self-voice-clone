@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./vclone.db"  # SQLAlchemy connection string for the app database.
     signed_url_ttl_seconds: int = 3600  # Download URL lifetime for generated assets in seconds.
 
+    upload_chunk_size_bytes: int = 8 * 1024 * 1024  # Browser resumable-upload chunk size.
+    upload_max_size_bytes: int = 10 * 1024 * 1024 * 1024  # Maximum accepted upload size for local MVP storage.
+
     xtts_model_name: str = "tts_models/multilingual/multi-dataset/xtts_v2"  # Coqui TTS model identifier used for XTTS inference.
     xtts_device: str = "auto"  # Inference device: auto/cpu/cuda.
     xtts_default_language: str = "en"  # Default XTTS language code when locale is not provided.

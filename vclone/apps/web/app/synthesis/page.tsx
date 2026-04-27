@@ -1,17 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSynthesisDownloadUrl, submitSynthesis, listVoiceProfiles } from "../../lib/api";
+import { getSynthesisDownloadUrl, getSynthesisPreview, getSystemCapabilities, submitSynthesis, listVoiceProfiles } from "../../lib/api";
 import { SectionCard } from "../../components/SectionCard";
 
 export default function SynthesisPage() {
   const [job, setJob] = useState<any>(null);
   const [download, setDownload] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
+  const [capabilities, setCapabilities] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function waitForSynthesis(jobId: string) {
+    for (;;) {
+      const preview = (await getSynthesisPreview(jobId)) as any;
+      setJob(preview);
+      const status = String(preview.status || "").toLowerCase();
+      if (status === "completed") {
+        return preview;
+      }
+      if (status === "failed") {
+        const progress = preview.request?.progress;
+        throw new Error(progress?.message || "Synthesis failed on the server.");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
+  }
 
   useEffect(() => {
     listVoiceProfiles().then((response) => setProfiles(response.items ?? [])).catch(() => setProfiles([]));
+    getSystemCapabilities().then(setCapabilities).catch(() => setCapabilities(null));
   }, []);
 
   return (
@@ -19,12 +38,9 @@ export default function SynthesisPage() {
       <SectionCard title="Generate speech" kicker="Step 3">
         <div className="page-header">
           <h1>Turn text into output</h1>
-          <p className="muted">Generate a mastered WAV/FLAC delivery file. Final mode now fails closed unless the output validates as a true native master rather than a derived XTTS package.</p>
+          <p className="muted">Start with Preview mode for a reliable first voice test. Preview uses the native XTTS-friendly format: mono 24 kHz WAV.</p>
         </div>
-        <p className="muted">Choose a saved profile, enter your text, and render a final output. If XTTS only produces mono 24 kHz internally, final mode will now reject the request instead of pretending that a packaged export is studio-native.</p>
-        <p className="muted">The request now also includes a preflight long-form QC pass so risky chunks can be identified before final packaging.</p>
-        <p className="muted">Preview and final modes now flow through an engine registry with distinct preview/final engine identities, warnings, and capability reporting.</p>
-        <p className="muted">Native-master enforcement is enabled by default. Preview mode remains useful for experimentation, but final release output requires a truly native-capable engine.</p>
+        <p className="muted">Final/master mode is stricter and can reject derived 48 kHz stereo exports. Use preview first to confirm the voice profile works.</p>
         <p className="muted">Generation also reports measured mastering data plus clearly labeled heuristic ASR/evaluation placeholders so you can distinguish real validation from scaffolding.</p>
         <form
           onSubmit={async (event) => {
@@ -32,6 +48,7 @@ export default function SynthesisPage() {
             setError(null);
             setJob(null);
             setDownload(null);
+            setLoading(true);
             try {
               const data = new FormData(event.currentTarget);
               const response = await submitSynthesis({
@@ -45,10 +62,13 @@ export default function SynthesisPage() {
                 require_native_master: data.get("require_native_master") !== null,
               });
               setJob(response);
+              await waitForSynthesis(response.job_id);
               const downloadResponse = await getSynthesisDownloadUrl(response.job_id);
               setDownload(downloadResponse);
             } catch (submitError) {
               setError(submitError instanceof Error ? submitError.message : "Generation failed");
+            } finally {
+              setLoading(false);
             }
           }}
         >
@@ -67,21 +87,21 @@ export default function SynthesisPage() {
           </label>
           <label>
             Render mode
-            <select name="mode" defaultValue="final">
+            <select name="mode" defaultValue="preview">
               <option value="preview">Preview</option>
               <option value="final">Final master candidate</option>
             </select>
           </label>
           <label>
             Output format
-            <select name="format" defaultValue="flac">
-              <option value="flac">FLAC</option>
+            <select name="format" defaultValue="wav">
               <option value="wav">WAV</option>
+              <option value="flac">FLAC</option>
             </select>
           </label>
           <label>
             Sample rate
-            <select name="sample_rate_hz" defaultValue="48000">
+            <select name="sample_rate_hz" defaultValue="24000">
               <option value="24000">24,000 Hz</option>
               <option value="44100">44,100 Hz</option>
               <option value="48000">48,000 Hz</option>
@@ -89,7 +109,7 @@ export default function SynthesisPage() {
           </label>
           <label>
             Channels
-            <select name="channels" defaultValue="2">
+            <select name="channels" defaultValue="1">
               <option value="1">Mono</option>
               <option value="2">Stereo</option>
             </select>
@@ -99,15 +119,21 @@ export default function SynthesisPage() {
             <input name="locale" defaultValue="en-IN" />
           </label>
           <label>
-            <input name="require_native_master" type="checkbox" defaultChecked />
+            <input name="require_native_master" type="checkbox" />
             Require native master
           </label>
-          <button type="submit">Generate</button>
+          <button type="submit" disabled={loading}>{loading ? "Generating..." : "Generate"}</button>
         </form>
         <div className="helper" style={{ marginTop: 16 }}>
           <strong>Delivery note</strong>
-          <div className="muted">A 48 kHz stereo FLAC/WAV export is not accepted as a studio master here unless the engine rendered it natively. Derived upsampled or dual-mono exports are rejected in final mode.</div>
+          <div className="muted">Recommended first test: Preview, WAV, 24 kHz, mono, native master unchecked. Use final/master only after preview works.</div>
         </div>
+        {capabilities ? (
+          <div className="result-box" style={{ marginTop: 16 }}>
+            <strong>System capabilities</strong>
+            <pre>{JSON.stringify(capabilities, null, 2)}</pre>
+          </div>
+        ) : null}
       </SectionCard>
 
       <SectionCard title="Generation output" kicker="Result">
@@ -117,8 +143,40 @@ export default function SynthesisPage() {
             <div className="muted">Synthesis still depends on XTTS backend availability, and XTTS remains natively mono 24 kHz in this repo. So preview is usable, but true Spotify-grade final release requires a better final engine.</div>
           </div>
           {error ? <div className="result-box"><pre>{error}</pre></div> : null}
-          {job ? <div className="result-box"><pre>{JSON.stringify(job, null, 2)}</pre></div> : null}
-          {download ? <div className="result-box"><pre>{JSON.stringify(download, null, 2)}</pre></div> : null}
+          {job?.request?.progress ? (
+            <div className="result-box">
+              <strong>{job.request.progress.message}</strong>
+              <div className="muted">Stage: {job.request.progress.stage}</div>
+              <div className="muted">Progress: {job.request.progress.percent}%</div>
+              <progress value={job.request.progress.percent} max={100} style={{ width: "100%", height: 14 }} />
+              {job.request.progress.total_chunks ? (
+                <div className="muted">Chunk: {job.request.progress.current_chunk}/{job.request.progress.total_chunks}</div>
+              ) : null}
+            </div>
+          ) : null}
+          {download ? (
+            <div className="result-box">
+              <strong>Audio ready</strong>
+              <div className="muted">{download.asset.format.toUpperCase()} • {download.asset.sample_rate_hz} Hz • {download.asset.channels} channel(s) • {(download.asset.duration_ms / 1000).toFixed(2)}s</div>
+              <audio controls src={download.url} style={{ width: "100%", marginTop: 12 }} />
+              <div className="actions" style={{ marginTop: 12 }}>
+                <a className="link-arrow" href={download.url} download>Download audio</a>
+                <a className="link-arrow" href={download.url} target="_blank" rel="noreferrer">Open audio</a>
+              </div>
+            </div>
+          ) : null}
+          {job ? (
+            <details className="result-box">
+              <summary>Job details</summary>
+              <pre>{JSON.stringify(job, null, 2)}</pre>
+            </details>
+          ) : null}
+          {download ? (
+            <details className="result-box">
+              <summary>Download and delivery details</summary>
+              <pre>{JSON.stringify(download, null, 2)}</pre>
+            </details>
+          ) : null}
         </div>
       </SectionCard>
     </div>

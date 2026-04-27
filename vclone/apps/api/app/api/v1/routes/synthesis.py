@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
+from app.db.session import SessionLocal
 from app.schemas.synthesis import DownloadUrlResponse, SynthesisJobResponse, SynthesisPreviewResponse, SynthesisRequest
 from app.services.synthesis import SynthesisService
 
@@ -9,16 +11,29 @@ from app.services.synthesis import SynthesisService
 router = APIRouter()
 
 
+def run_synthesis_job_background(job_id: str) -> None:
+    db = SessionLocal()
+    try:
+        SynthesisService(db).run_job(job_id)
+    finally:
+        db.close()
+
+
 @router.post("", response_model=SynthesisJobResponse)
-def submit_synthesis(payload: SynthesisRequest, db: Session = Depends(get_db_session)) -> SynthesisJobResponse:
+def submit_synthesis(
+    payload: SynthesisRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db_session),
+) -> SynthesisJobResponse:
     try:
         job = SynthesisService(db).create_job(**payload.model_dump())
+        background_tasks.add_task(run_synthesis_job_background, job.id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return SynthesisJobResponse(
         job_id=job.id,
         status=job.status.upper(),
-        message="Synthesis job created. Final mode now fails closed unless the exported master validates as native.",
+        message="Synthesis job queued. The frontend will poll for progress and download when complete.",
     )
 
 
@@ -36,3 +51,12 @@ def create_download_url(job_id: str, db: Session = Depends(get_db_session)) -> D
         return DownloadUrlResponse(**SynthesisService(db).get_download_url(job_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{job_id}/file")
+def download_generated_file(job_id: str, db: Session = Depends(get_db_session)) -> FileResponse:
+    try:
+        path = SynthesisService(db).get_generated_file_path(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, media_type="audio/wav", filename=path.split("/")[-1])

@@ -1,49 +1,15 @@
 {
   "pages": {
-    "/_not-found/page": [
-      "static/chunks/webpack-744ee3f145013e34.js",
-      "static/chunks/4bd1b696-239c50da69b5278f.js",
-      "static/chunks/215-624c6edaceb5ec52.js",
-      "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/chunks/app/_not-found/page-db268f776fca6aa4.js"
-    ],
     "/layout": [
-      "static/chunks/webpack-744ee3f145013e34.js",
-      "static/chunks/4bd1b696-239c50da69b5278f.js",
-      "static/chunks/215-624c6edaceb5ec52.js",
-      "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/css/ae7c972c0835d843.css",
-      "static/chunks/231-22ff229b513d9822.js",
-      "static/chunks/app/layout-7b255ffc39a7d224.js"
-    ],
-    "/page": [
-      "static/chunks/webpack-744ee3f145013e34.js",
-      "static/chunks/4bd1b696-239c50da69b5278f.js",
-      "static/chunks/215-624c6edaceb5ec52.js",
-      "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/chunks/231-22ff229b513d9822.js",
-      "static/chunks/app/page-c0e755e06be01be9.js"
-    ],
-    "/voices/page": [
-      "static/chunks/webpack-744ee3f145013e34.js",
-      "static/chunks/4bd1b696-239c50da69b5278f.js",
-      "static/chunks/215-624c6edaceb5ec52.js",
-      "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/chunks/app/voices/page-5e5bab3b47d805df.js"
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/layout.css",
+      "static/chunks/app/layout.js"
     ],
     "/synthesis/page": [
-      "static/chunks/webpack-744ee3f145013e34.js",
-      "static/chunks/4bd1b696-239c50da69b5278f.js",
-      "static/chunks/215-624c6edaceb5ec52.js",
-      "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/chunks/app/synthesis/page-9b403de17c901873.js"
-    ],
-    "/enrollment/page": [
-      "static/chunks/webpack-744ee3f145013e34.js",
-      "static/chunks/4bd1b696-239c50da69b5278f.js",
-      "static/chunks/215-624c6edaceb5ec52.js",
-      "static/chunks/main-app-bd37fd40853e069b.js",
-      "static/chunks/app/enrollment/page-0b75ceb53e842361.js"
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/synthesis/page.js"
     ]
   }
 }

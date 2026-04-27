@@ -33,3 +33,6 @@ build/
 *.log
 tmp/
 temp/
+
+vclone/Swami-voice.wav
+vclone/Swami-srt.srt

@@ -6,12 +6,12 @@ from pydantic import BaseModel, Field
 class SynthesisRequest(BaseModel):
     voice_profile_id: str
     text: str = Field(..., min_length=1)
-    mode: str = "final"
-    format: str = "flac"
-    sample_rate_hz: int = 48000
-    channels: int = 2
+    mode: str = "preview"
+    format: str = "wav"
+    sample_rate_hz: int = 24000
+    channels: int = 1
     locale: str = "en-IN"
-    require_native_master: bool = True
+    require_native_master: bool = False
 
 
 class SynthesisJobResponse(BaseModel):

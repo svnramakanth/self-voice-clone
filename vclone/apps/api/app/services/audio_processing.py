@@ -27,7 +27,7 @@ class AudioProcessingService:
         self.ffmpeg_path = shutil.which("ffmpeg")
         self.ffprobe_path = shutil.which("ffprobe")
 
-    def process_for_conditioning(self, input_path: str, output_dir: str) -> ProcessedAudioInfo:
+    def process_for_conditioning(self, input_path: str, output_dir: str, preserve_internal_silence: bool = False) -> ProcessedAudioInfo:
         source = Path(input_path)
         target_dir = Path(output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -38,14 +38,19 @@ class AudioProcessingService:
         loudness_normalized = False
 
         if self.ffmpeg_path:
+            audio_filter = "loudnorm=I=-16:TP=-1.5:LRA=11"
+            if not preserve_internal_silence:
+                audio_filter = (
+                    "silenceremove=start_periods=1:start_silence=0.2:start_threshold=-40dB:"
+                    "stop_periods=1:stop_silence=0.3:stop_threshold=-40dB,loudnorm=I=-16:TP=-1.5:LRA=11"
+                )
             command = [
                 self.ffmpeg_path,
                 "-y",
                 "-i",
                 str(source),
                 "-af",
-                "silenceremove=start_periods=1:start_silence=0.2:start_threshold=-40dB:"
-                "stop_periods=1:stop_silence=0.3:stop_threshold=-40dB,loudnorm=I=-16:TP=-1.5:LRA=11",
+                audio_filter,
                 "-ar",
                 "24000",
                 "-ac",
@@ -55,7 +60,7 @@ class AudioProcessingService:
             result = subprocess.run(command, capture_output=True, text=True, check=False)
             if result.returncode == 0 and processed_path.exists():
                 ffmpeg_used = True
-                silence_trimmed = True
+                silence_trimmed = not preserve_internal_silence
                 loudness_normalized = True
 
         if not processed_path.exists():

@@ -24,6 +24,19 @@ class EngineRegistry:
             "premium_final": self._premium_final_engine.capabilities(),
         }
 
+    def summary(self) -> dict:
+        preview = self._preview_engine.capabilities()
+        final = self._final_engine.capabilities()
+        premium = self._premium_final_engine.capabilities()
+        return {
+            "recommended_preview_engine": preview["name"],
+            "recommended_final_engine": premium["name"] if premium["runtime"]["available"] else final["name"],
+            "native_distribution_master_available": bool(
+                premium["supports_native_distribution_master"] and premium["runtime"]["available"]
+            ) or bool(final["supports_native_distribution_master"] and final["runtime"]["available"]),
+            "final_delivery_warning": "Current in-repo XTTS engines remain natively mono/24 kHz, so true Spotify-grade native stereo delivery is still not available.",
+        }
+
     def select(self, mode: str, *, sample_rate_hz: int, channels: int) -> dict:
         normalized_mode = (mode or "final").strip().lower()
         if normalized_mode == "preview":

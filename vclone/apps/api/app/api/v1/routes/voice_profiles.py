@@ -94,3 +94,23 @@ def get_voice_profile(voice_profile_id: str, db: Session = Depends(get_db_sessio
         base_model_version=profile.base_model_version,
         readiness_report=json.loads(profile.readiness_report_json or "{}"),
     )
+
+
+@router.post("/{voice_profile_id}/deep-quality-check", response_model=VoiceProfileDetail)
+def start_deep_quality_check(voice_profile_id: str, db: Session = Depends(get_db_session)) -> VoiceProfileDetail:
+    service = VoiceProfileService(db)
+    service.ensure_schema()
+    try:
+        profile = service.start_deep_quality_check(voice_profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return VoiceProfileDetail(
+        id=profile.id,
+        name=profile.name,
+        enrollment_id=profile.enrollment_id,
+        status=profile.status,
+        engine_family=profile.engine_family,
+        base_model_version=profile.base_model_version,
+        readiness_report=json.loads(profile.readiness_report_json or "{}"),
+    )
