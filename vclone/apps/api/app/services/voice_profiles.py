@@ -16,6 +16,7 @@ from app.services.audit import AuditService
 from app.services.quality_scoring import QualityScoringService
 from app.services.srt_parser import SRTParserService
 from app.services.transcription import AutoTranscriptionService
+from app.services.voice_dataset import VoiceDatasetBuilder
 
 
 class VoiceProfileService:
@@ -28,6 +29,7 @@ class VoiceProfileService:
         self.alignment = AlignmentService()
         self.quality_scoring = QualityScoringService()
         self.srt_parser = SRTParserService()
+        self.voice_dataset_builder = VoiceDatasetBuilder()
 
     def _create_profile_from_audio_path(
         self,
@@ -176,6 +178,27 @@ class VoiceProfileService:
             fast_mode=fast_enrollment_mode,
         )
 
+        progress_callback(
+            {
+                "stage": "building_clone_dataset",
+                "percent": 96,
+                "message": "Building curated clone dataset and exact prompt bundle for VoxCPM2/Chatterbox.",
+            }
+        )
+        clone_dataset = self.voice_dataset_builder.build(
+            source_audio_path=str(working_audio_path),
+            processed_audio_path=processed_audio.processed_path,
+            transcript_text=resolved_transcript_text,
+            output_dir=str(audio_dir),
+            curation_report=curation_report,
+            progress_callback=progress_callback,
+        )
+        if clone_dataset.get("status") in {"adaptation_ready", "zero_shot_ready", "limited_prompt_ready"}:
+            readiness_status = "ready"
+        else:
+            readiness_status = processed_audio.readiness_status
+        stored_curation_report = self._compact_curation_report(curation_report)
+
         progress_callback({"stage": "saving_voice_profile", "percent": 98, "message": "Saving voice profile."})
         profile = VoiceProfile(
             user_id=user.id,
@@ -185,9 +208,9 @@ class VoiceProfileService:
             source_audio_path=str(working_audio_path),
             sample_audio_path=processed_audio.processed_path,
             transcript_path=transcript_path_str,
-            status=processed_audio.readiness_status,
-            engine_family="xtts_v2_prep",
-            base_model_version="conditioning-phase1",
+            status=readiness_status,
+            engine_family="voxcpm2_primary_clone",
+            base_model_version="curated-clone-profile-v1",
             readiness_report_json=json.dumps(
                 {
                     "audio_uploaded": True,
@@ -199,16 +222,17 @@ class VoiceProfileService:
                     "guidance": processed_audio.guidance,
                     "alignment": alignment.to_dict(),
                     "srt": srt_report or {"provided": False},
-                    "curation": curation_report
+                    "curation": stored_curation_report
                     or {
                         "used": False,
                         "reason": "No usable SRT file was supplied; conditioning audio was created from the uploaded audio directly.",
                     },
                     "measured_alignment": measured_alignment,
                     "quality": quality.to_dict(),
+                    "clone_dataset": clone_dataset,
                     "deep_quality": {
                         "status": "pending",
-                        "reason": "Enrollment completed with bounded scoring. Run deep quality analysis separately for expensive ASR/speaker checks.",
+                        "reason": "Enrollment completed with curation-first clone artifacts. Run deep ASR/speaker checks before final publishing.",
                     },
                     "transcription": transcription or {
                         "provider": "provided",
@@ -230,10 +254,13 @@ class VoiceProfileService:
                     "storage": "local",
                     "dataset": {
                         "multi_file_support": False,
-                        "curated_segment_count": alignment.segment_count,
-                        "adaptation_candidate": quality.recommended_for_adaptation,
+                        "curated_segment_count": clone_dataset.get("accepted_segment_count", alignment.segment_count),
+                        "curated_minutes": clone_dataset.get("curated_minutes", 0.0),
+                        "manifest_path": clone_dataset.get("manifest_path"),
+                        "adaptation_candidate": bool(clone_dataset.get("engine_readiness", {}).get("voxcpm2_lora_candidate")),
+                        "zero_shot_candidate": clone_dataset.get("engine_readiness", {}).get("voxcpm2_ultimate_clone") == "ready",
                     },
-                    "note": "Enrollment now preserves the uploaded source audio and stores a separate conditioning derivative, but it is still not a full speaker-verification or fine-tuning pipeline.",
+                    "note": "Enrollment now builds a curated clone dataset and exact prompt bundle. VoxCPM2 is primary, Chatterbox is fallback, XTTS is legacy only.",
                 }
             ),
         )
@@ -379,3 +406,17 @@ class VoiceProfileService:
 
     def get_profile(self, voice_profile_id: str) -> VoiceProfile | None:
         return self.db.get(VoiceProfile, voice_profile_id)
+
+    def _compact_curation_report(self, report: dict | None) -> dict | None:
+        if not report:
+            return None
+        compact = dict(report)
+        selected_segments = list(compact.get("selected_segments") or [])
+        rejected_segments = list(compact.get("rejected_segments") or [])
+        compact["selected_segments_preview"] = selected_segments[:50]
+        compact["rejected_segments_preview"] = rejected_segments[:100]
+        compact["selected_segments_truncated"] = max(0, len(selected_segments) - 50)
+        compact["rejected_segments_truncated"] = max(0, len(rejected_segments) - 100)
+        compact.pop("selected_segments", None)
+        compact.pop("rejected_segments", None)
+        return compact

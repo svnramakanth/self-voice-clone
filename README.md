@@ -18,7 +18,9 @@ That means:
 - transcript can be omitted and will be auto-filled,
 - uploaded audio is normalized, silence-trimmed, and loudness-normalized when possible,
 - the app stores readiness/quality guidance based on reference duration,
-- synthesis is now designed to use **XTTS v2** with processed reference audio,
+- enrollment now builds a curated clone dataset and exact prompt bundle from SRT-aligned speech,
+- synthesis is now designed to prefer **VoxCPM2** for prompt-audio + prompt-text cloning, with **Chatterbox** as fallback,
+- **XTTS v2 is legacy-only** and is no longer silently used when the modern clone engines are unavailable,
 - synthesis now renders chunk-by-chunk, measures the actual output file with `ffprobe`, and can export mastered **WAV** or **FLAC** delivery files,
 - each delivery now includes a report telling you whether the file is a true native Spotify-style master or only a derived package from the XTTS native render,
 - final-mode synthesis now fails closed by default when the selected engine cannot produce a true native master,
@@ -32,7 +34,36 @@ That means:
 - Phase C now adds expanded text normalization, pronunciation lexicon overrides, faster-whisper-backed ASR back-check when available, and selective regeneration planning,
 - Phase D now adds release-grade mastering summaries, stronger delivery validation, and native-vs-derived truth reporting,
 - Phase E now adds dependency-aware evaluation reports for similarity, intelligibility/WER, artifact scoring, human listening rubric, and golden-sample regression checks,
-- but XTTS dependencies must be installed successfully in your API environment for real inference to work.
+- but VoxCPM2/Chatterbox optional dependencies must be installed successfully in your API environment for best clone inference to work.
+
+Optional clone engines:
+
+```bash
+cd /Users/ramakanth/pers/self-voice-clone/vclone/apps/api
+source .venv/bin/activate
+pip install -e '.[voxcpm]'
+```
+
+VoxCPM2 is the primary target because it supports prompt audio + exact prompt transcript cloning and native 48 kHz output. It is a large model, so CPU/Mac synthesis can be slow, especially on first model load. For VoxCPM2, `VOXCPM_DEVICE=auto` intentionally tries CUDA then CPU. Apple MPS is not auto-selected because the current VoxCPM2 path can crash during MPSGraph warm-up on Mac; use `VOXCPM_DEVICE=mps` only if you explicitly want to test it.
+
+Recommended Mac M-series settings:
+
+```env
+PRIMARY_TTS_ENGINE=voxcpm2
+VOXCPM_DEVICE=cpu
+VOXCPM_ALLOW_CPU=true
+CHATTERBOX_VARIANT=original
+```
+
+Chatterbox is kept as a practical high-quality prompt-cloning fallback and should be installed separately only if needed:
+
+```bash
+pip install -e '.[chatterbox]'
+```
+
+The default Chatterbox variant is `original`, because it is the stable pip API. Use `CHATTERBOX_VARIANT=turbo` only if your installed Chatterbox package actually exposes `chatterbox.tts_turbo`.
+
+XTTS remains only a legacy baseline.
 
 ## Phase 1 conditioning rules
 
@@ -179,16 +210,17 @@ The project intentionally does **not** require:
 - backend: `/Users/ramakanth/pers/self-voice-clone/vclone/apps/api`
 - frontend: `/Users/ramakanth/pers/self-voice-clone/vclone/apps/web`
 
-## XTTS Phase 2 note
+## Clone engine note
 
-Synthesis now targets XTTS v2 inference using:
-- processed reference audio from the saved profile
+- SRT-curated prompt audio from the saved profile
+- exact prompt transcript text from the same SRT/audio segment
 - target text from the synthesis form
 
 Important limitation:
-- if XTTS natively renders mono / lower-sample-rate audio, exporting a 44.1/48 kHz stereo WAV/FLAC file is still only a **derived distribution master**, not a native high-resolution stereo capture. Final mode now rejects that output by default instead of treating it as release-ready.
+- mastering cannot fix a bad clone. Speaker identity must come from the curated dataset and clone engine.
+- if the selected engine natively renders mono, exporting stereo WAV/FLAC is still only a **derived distribution master**, not native stereo capture.
 - current transcription/back-check now attempts faster-whisper first, and speaker verification now attempts SpeechBrain first, but the repo still does not yet equal a full production WhisperX + premium final-render stack.
 - Phase B is now implemented through B1-B4 in code: strict capability enforcement, stronger final-engine behavior, a configurable premium XTTS final engine profile, and richer UI/API reporting. However, even the premium XTTS path is still limited by XTTS’s native mono / lower-rate rendering ceiling.
 - Phases C/D/E are implemented as a strong in-repo framework with dependency hooks for later replacement by real ASR, artifact models, and speaker-embedding evaluation. The current scores are useful for pipeline shaping, but they are not equal to external benchmark-grade evaluation yet.
 
-If `TTS` / model initialization is unavailable, the API will now return a clear error instead of silently falling back to fake synthesis.
+If VoxCPM2/Chatterbox model initialization is unavailable, the API now returns a clear error instead of silently falling back to the poor XTTS path.

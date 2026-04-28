@@ -11,6 +11,8 @@ from app.services.speaker_verification import SpeakerVerificationService
 class EnrollmentQualityReport:
     overall_score: float
     speaker_match_score: float
+    speaker_verification_provider: str
+    speaker_verification_measured: bool
     transcription_confidence: float
     alignment_confidence: float
     estimated_snr_db: float
@@ -50,14 +52,22 @@ class QualityScoringService:
         snr = round(snr, 2)
         if defer_speaker_verification:
             speaker_match = min(0.88, 0.62 + duration_factor * 0.22)
+            speaker_provider = "deferred_heuristic"
+            speaker_measured = False
             warnings.append("Speaker embedding verification was deferred for fast SRT-based enrollment processing.")
         elif source_audio_path:
-            speaker_match = self.speaker_verification.verify(
+            speaker_report = self.speaker_verification.verify(
                 reference_audio_path=source_audio_path,
                 candidate_audio_path=audio_path,
-            ).similarity_score
+            )
+            speaker_match = speaker_report.similarity_score
+            speaker_provider = speaker_report.provider
+            speaker_measured = speaker_report.provider == "speechbrain_ecapa"
+            warnings.extend(speaker_report.notes)
         else:
             speaker_match = min(0.9, 0.55 + duration_factor * 0.25)
+            speaker_provider = "duration_heuristic"
+            speaker_measured = False
         speaker_match = round(speaker_match, 3)
         overall = round(min(0.99, (speaker_match * 0.4) + (alignment_confidence * 0.3) + (transcript_confidence * 0.2) + (min(snr / 30, 1.0) * 0.1)), 3)
 
@@ -73,6 +83,8 @@ class QualityScoringService:
         return EnrollmentQualityReport(
             overall_score=overall,
             speaker_match_score=speaker_match,
+            speaker_verification_provider=speaker_provider,
+            speaker_verification_measured=speaker_measured,
             transcription_confidence=round(transcript_confidence, 3),
             alignment_confidence=round(alignment_confidence, 3),
             estimated_snr_db=snr,

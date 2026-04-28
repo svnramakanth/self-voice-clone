@@ -119,8 +119,8 @@ class AudioSegmenterService:
                 rejected_segment_count=len(rejected),
                 selected_duration_seconds=round(selected_seconds, 2),
                 warnings=warnings,
-                selected_segments=[{**item["segment"].to_dict(), "speech_analysis": item["speech_analysis"]} for item in selected[:50]],
-                rejected_segments=rejected[:50],
+                selected_segments=[{**item["segment"].to_dict(), "speech_analysis": item["speech_analysis"]} for item in selected],
+                rejected_segments=rejected[:100],
                 ffmpeg_used=False,
             )
 
@@ -167,7 +167,7 @@ class AudioSegmenterService:
                 continue
             if result.returncode == 0 and output.exists() and output.stat().st_size > 44:
                 segment_files.append(output)
-                extracted_segment_reports.append({**segment.to_dict(), "speech_analysis": speech_analysis})
+                extracted_segment_reports.append({**segment.to_dict(), "speech_analysis": speech_analysis, "segment_audio_path": str(output)})
             else:
                 rejected.append({**segment.to_dict(), "reason": "ffmpeg failed to extract segment or extracted silence.", "speech_analysis": speech_analysis})
 
@@ -213,10 +213,12 @@ class AudioSegmenterService:
             rejected_segment_count=len(rejected),
             selected_duration_seconds=round(selected_seconds, 2),
             warnings=warnings,
-            selected_segments=extracted_segment_reports[:50]
-            if extracted_segment_reports
-            else [{**item["segment"].to_dict(), "speech_analysis": item["speech_analysis"]} for item in selected[:50]],
-            rejected_segments=rejected[:50],
+            selected_segments=(
+                extracted_segment_reports
+                if extracted_segment_reports
+                else [{**item["segment"].to_dict(), "speech_analysis": item["speech_analysis"]} for item in selected]
+            ),
+            rejected_segments=rejected[:100],
             ffmpeg_used=ffmpeg_used,
         )
 

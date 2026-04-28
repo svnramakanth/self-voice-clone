@@ -16,6 +16,19 @@ dependencies = [
   "torchaudio>=2.2.0"
 ]
 
+[project.optional-dependencies]
+voxcpm = [
+  "voxcpm",
+  "soundfile>=0.12.1"
+]
+chatterbox = [
+  "chatterbox-tts"
+]
+clone-engines = [
+  "voxcpm",
+  "soundfile>=0.12.1"
+]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"

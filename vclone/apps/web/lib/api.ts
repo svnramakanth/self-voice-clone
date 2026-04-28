@@ -74,6 +74,7 @@ export type SynthesisDownloadResponse = {
   delivery_report: Record<string, unknown>;
   evaluation: Record<string, unknown>;
   asr_backcheck: Record<string, unknown>;
+  clone_profile: Record<string, unknown>;
   engine_selection: Record<string, unknown>;
   engine_registry: Record<string, unknown>;
 };
@@ -312,6 +313,13 @@ export async function submitSynthesis(payload: {
 export async function getSynthesisPreview(jobId: string) {
   const response = await apiFetch(`${API_BASE}/synthesis/${jobId}/preview`, { cache: "no-store" });
   return readJson(response);
+}
+
+export async function cancelSynthesis(jobId: string): Promise<SynthesisJobResponse> {
+  const response = await apiFetch(`${API_BASE}/synthesis/${jobId}/cancel`, {
+    method: "POST",
+  });
+  return readJson<SynthesisJobResponse>(response);
 }
 
 export async function getSynthesisDownloadUrl(jobId: string): Promise<SynthesisDownloadResponse> {

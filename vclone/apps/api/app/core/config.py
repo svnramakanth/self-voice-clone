@@ -38,6 +38,29 @@ class Settings(BaseSettings):
     delivery_true_peak_db: float = -1.5  # True-peak ceiling in dBTP.
     delivery_target_lra: float = 7.0  # Loudness range target used during mastering.
 
+    primary_tts_engine: str = "voxcpm2"  # Preferred free local engine for best clone quality.
+    engine_allow_xtts_fallback: bool = False  # Do not silently fall back to XTTS because it produced poor clone quality.
+    synthesis_max_chunk_chars: int = 140  # Shorter chunks reduce voice drift for clone engines.
+
+    voxcpm_model_name: str = "openbmb/VoxCPM2"  # VoxCPM2 HF/model identifier.
+    voxcpm_device: str = "cpu"  # auto/cpu/cuda/mps for VoxCPM2 when supported by runtime.
+    voxcpm_allow_cpu: bool = True  # Allow CPU fallback; Mac M-series users may accept slow primary-engine inference.
+    voxcpm_load_denoiser: bool = False  # Upstream quickstart default; faster and less processing.
+    voxcpm_cfg_value: float = 2.0  # Upstream recommended CFG value.
+    voxcpm_inference_timesteps: int = 10  # Upstream quickstart default.
+    voxcpm_optimize: bool = False  # Stability first; avoid VoxCPM warm-up/compile path unless explicitly enabled.
+    synthesis_chunk_timeout_seconds: int = 900  # User-facing timeout guidance for long model calls.
+    synthesis_heartbeat_interval_seconds: int = 5  # Progress heartbeat while isolated synthesis worker is running.
+    synthesis_stale_seconds: int = 180  # Mark running jobs failed when no heartbeat/update arrives in this window.
+
+    chatterbox_device: str = "auto"  # auto/cpu/cuda for Chatterbox.
+    chatterbox_variant: str = "original"  # original is the stable pip API; turbo is used only when explicitly installed/supported.
+    chatterbox_language_id: str = "en"  # Used by multilingual Chatterbox.
+
+    voice_dataset_min_segment_seconds: float = 2.0  # Hard minimum for clone dataset clips.
+    voice_dataset_max_segment_seconds: float = 20.0  # Hard maximum for stable clone dataset clips.
+    voice_prompt_target_seconds: int = 20  # Exact prompt pack size for VoxCPM2 ultimate cloning.
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

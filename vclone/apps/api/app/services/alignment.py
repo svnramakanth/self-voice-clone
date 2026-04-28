@@ -90,7 +90,7 @@ class AlignmentService:
             "provider": transcription.get("provider"),
             "confidence": round(confidence, 3),
             "observed_text": observed_text,
-            "segment_count": len(observed_segments) or max(1, math.ceil(duration_seconds / 8)) if (duration_seconds := 0) else len(observed_segments),
+            "segment_count": len(observed_segments) or (max(1, math.ceil(len(reference_words) / 20)) if reference_words else 0),
             "segments": observed_segments,
             "notes": notes,
         }

@@ -44,5 +44,6 @@ class DownloadUrlResponse(BaseModel):
     delivery_report: dict[str, Any] = Field(default_factory=dict)
     evaluation: dict[str, Any] = Field(default_factory=dict)
     asr_backcheck: dict[str, Any] = Field(default_factory=dict)
+    clone_profile: dict[str, Any] = Field(default_factory=dict)
     engine_selection: dict[str, Any] = Field(default_factory=dict)
     engine_registry: dict[str, Any] = Field(default_factory=dict)

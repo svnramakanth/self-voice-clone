@@ -20,20 +20,28 @@ export default async function VoicesPage() {
                 <th>ID</th>
                 <th>Status</th>
                 <th>Engine</th>
+                <th>Clone dataset</th>
+                <th>Prompt</th>
               </tr>
             </thead>
             <tbody>
-              {(profiles.items ?? []).map((item: any) => (
-                <tr key={item.id}>
-                  <td>{item.name}</td>
-                  <td><code>{item.id}</code></td>
-                  <td><span className="pill">{item.status}</span></td>
-                  <td>{item.engine_family}</td>
-                </tr>
-              ))}
+              {(profiles.items ?? []).map((item: any) => {
+                const cloneDataset = item.readiness_report?.clone_dataset ?? {};
+                const prompt = cloneDataset.prompt ?? {};
+                return (
+                  <tr key={item.id}>
+                    <td>{item.name}</td>
+                    <td><code>{item.id}</code></td>
+                    <td><span className="pill">{item.status}</span></td>
+                    <td>{item.engine_family}</td>
+                    <td>{cloneDataset.status ?? "not built"} {cloneDataset.curated_minutes ? `• ${cloneDataset.curated_minutes} min` : ""}</td>
+                    <td>{prompt.status ?? "missing"} {prompt.prompt_seconds ? `• ${prompt.prompt_seconds}s` : ""}</td>
+                  </tr>
+                );
+              })}
               {!(profiles.items ?? []).length ? (
                 <tr>
-                  <td colSpan={4} className="muted">No profiles yet. Create one on the enrollment page first.</td>
+                  <td colSpan={6} className="muted">No profiles yet. Create one on the enrollment page first.</td>
                 </tr>
               ) : null}
             </tbody>
@@ -44,7 +52,7 @@ export default async function VoicesPage() {
       <SectionCard title="What this page tells you" kicker="Quick note">
         <div className="helper">
           <strong>If the profile is visible, your upload step worked.</strong>
-          <div className="muted">You can now go to Generate and pick this profile from the dropdown. The status and engine column come directly from the backend voice profile response.</div>
+          <div className="muted">For a real clone, also check that clone dataset and prompt are ready. VoxCPM2 uses the prompt audio plus exact prompt text for stable voice identity.</div>
         </div>
       </SectionCard>
     </div>

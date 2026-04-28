@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSynthesisDownloadUrl, getSynthesisPreview, getSystemCapabilities, submitSynthesis, listVoiceProfiles } from "../../lib/api";
+import { cancelSynthesis, getSynthesisDownloadUrl, getSynthesisPreview, getSystemCapabilities, submitSynthesis, listVoiceProfiles } from "../../lib/api";
 import { SectionCard } from "../../components/SectionCard";
 
 export default function SynthesisPage() {
@@ -20,7 +20,7 @@ export default function SynthesisPage() {
       if (status === "completed") {
         return preview;
       }
-      if (status === "failed") {
+      if (status === "failed" || status === "cancelled") {
         const progress = preview.request?.progress;
         throw new Error(progress?.message || "Synthesis failed on the server.");
       }
@@ -38,10 +38,10 @@ export default function SynthesisPage() {
       <SectionCard title="Generate speech" kicker="Step 3">
         <div className="page-header">
           <h1>Turn text into output</h1>
-          <p className="muted">Start with Preview mode for a reliable first voice test. Preview uses the native XTTS-friendly format: mono 24 kHz WAV.</p>
+          <p className="muted">Start with Preview mode for a reliable first voice test. The backend now prefers VoxCPM2 from your curated prompt bundle, with Chatterbox as fallback.</p>
         </div>
-        <p className="muted">Final/master mode is stricter and can reject derived 48 kHz stereo exports. Use preview first to confirm the voice profile works.</p>
-        <p className="muted">Generation also reports measured mastering data plus clearly labeled heuristic ASR/evaluation placeholders so you can distinguish real validation from scaffolding.</p>
+        <p className="muted">Final/master mode is stricter and can reject derived stereo exports. First confirm the actual voice identity in preview.</p>
+        <p className="muted">If VoxCPM2/Chatterbox dependencies are missing, generation fails clearly instead of silently returning another bad XTTS clone.</p>
         <form
           onSubmit={async (event) => {
             event.preventDefault();
@@ -126,7 +126,8 @@ export default function SynthesisPage() {
         </form>
         <div className="helper" style={{ marginTop: 16 }}>
           <strong>Delivery note</strong>
-          <div className="muted">Recommended first test: Preview, WAV, 24 kHz, mono, native master unchecked. Use final/master only after preview works.</div>
+          <div className="muted">Recommended first test: Preview, WAV, mono, native master unchecked. Use final/master only after the voice actually sounds like you.</div>
+          <div className="muted">If a job becomes stale or hangs, use Cancel and retry after restarting the API. Native model crashes now get detected more cleanly.</div>
         </div>
         {capabilities ? (
           <div className="result-box" style={{ marginTop: 16 }}>
@@ -139,8 +140,10 @@ export default function SynthesisPage() {
       <SectionCard title="Generation output" kicker="Result">
         <div className="stack">
           <div className="helper">
-            <strong>Current limitation</strong>
-            <div className="muted">Synthesis still depends on XTTS backend availability, and XTTS remains natively mono 24 kHz in this repo. So preview is usable, but true Spotify-grade final release requires a better final engine.</div>
+            <strong>Clone pipeline</strong>
+            <div className="muted">Primary: VoxCPM2 ultimate cloning from curated prompt audio + exact prompt text. Secondary: Chatterbox prompt cloning. XTTS is legacy only and disabled as silent fallback by default.</div>
+            <div className="muted">On Mac, VoxCPM2 auto mode uses CUDA if present, otherwise CPU. MPS is opt-in only because this model can crash during MPSGraph warm-up.</div>
+            {capabilities?.summary?.clone_pipeline ? <div className="muted">Runtime: {String(capabilities.summary.clone_pipeline)}</div> : null}
           </div>
           {error ? <div className="result-box"><pre>{error}</pre></div> : null}
           {job?.request?.progress ? (
@@ -151,6 +154,21 @@ export default function SynthesisPage() {
               <progress value={job.request.progress.percent} max={100} style={{ width: "100%", height: 14 }} />
               {job.request.progress.total_chunks ? (
                 <div className="muted">Chunk: {job.request.progress.current_chunk}/{job.request.progress.total_chunks}</div>
+              ) : null}
+              {String(job.status || "").toLowerCase() === "running" || String(job.status || "").toLowerCase() === "cancel_requested" ? (
+                <button
+                  type="button"
+                  style={{ marginTop: 12 }}
+                  onClick={async () => {
+                    try {
+                      await cancelSynthesis(job.job_id);
+                    } catch (cancelError) {
+                      setError(cancelError instanceof Error ? cancelError.message : "Failed to cancel synthesis job.");
+                    }
+                  }}
+                >
+                  Cancel synthesis
+                </button>
               ) : null}
             </div>
           ) : null}

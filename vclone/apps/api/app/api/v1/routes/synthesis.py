@@ -45,6 +45,19 @@ def get_preview(job_id: str, db: Session = Depends(get_db_session)) -> Synthesis
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/{job_id}/cancel", response_model=SynthesisJobResponse)
+def cancel_synthesis(job_id: str, db: Session = Depends(get_db_session)) -> SynthesisJobResponse:
+    try:
+        job = SynthesisService(db).cancel_job(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SynthesisJobResponse(
+        job_id=job.id,
+        status=job.status.upper(),
+        message="Cancellation requested. The synthesis worker will stop at the next safe checkpoint.",
+    )
+
+
 @router.post("/{job_id}/download-url", response_model=DownloadUrlResponse)
 def create_download_url(job_id: str, db: Session = Depends(get_db_session)) -> DownloadUrlResponse:
     try:

@@ -141,7 +141,7 @@ export default function EnrollmentPage() {
       <SectionCard title="Create your voice profile" kicker="Large-file enrollment">
         <div className="page-header">
           <h1>Upload and process your voice sample</h1>
-          <p className="muted">Best-quality large-audio enrollment: chunked upload, optional SRT alignment, silence-aware trimming, and maximum valid speech usage. Retry uses the preserved original upload without re-uploading.</p>
+          <p className="muted">Best-quality large-audio enrollment: chunked upload, SRT alignment, clean segment extraction, and a curated prompt bundle for VoxCPM2/Chatterbox voice cloning.</p>
         </div>
         <form
           onSubmit={async (event) => {
@@ -257,7 +257,7 @@ export default function EnrollmentPage() {
       <SectionCard title="Controls and guidance" kicker="Recovery">
         <div className="helper" style={{ marginBottom: 16 }}>
           <strong>Retry/cancel processing without re-uploading</strong>
-          <p className="muted">Retry always starts from preserved original audio + SRT and regenerates derived files. It does not reuse failed partial artifacts. Best-quality processing analyzes all valid SRT speech segments instead of stopping early.</p>
+          <p className="muted">Retry always starts from preserved original audio + SRT and rebuilds the curated clone dataset, prompt pack, and derived files. It does not reuse failed partial artifacts.</p>
           <label>Upload/session ID<input value={retryUploadId} onChange={(event) => setRetryUploadId(event.currentTarget.value)} placeholder="upload/session id" /></label>
           <div className="actions">
             <button type="button" disabled={loading} onClick={() => retryProcessing(retryUploadId)}>{loading ? "Working..." : "Retry processing"}</button>
@@ -265,7 +265,7 @@ export default function EnrollmentPage() {
           </div>
         </div>
         <div className="feature-list">
-          <div className="feature-item"><div className="feature-badge">1</div><div><strong>Use SRT when available.</strong><div className="muted">The backend trims silence inside subtitle windows and uses every valid detected speech span for best-quality conditioning.</div></div></div>
+          <div className="feature-item"><div className="feature-badge">1</div><div><strong>Use SRT when available.</strong><div className="muted">The backend trims silence inside subtitle windows and extracts clean segments for a clone dataset, not just one long conditioning file.</div></div></div>
           <div className="feature-item"><div className="feature-badge">2</div><div><strong>Adjust offset if needed.</strong><div className="muted">If subtitles are shifted, enter offset milliseconds before upload. Positive moves SRT later; negative moves it earlier.</div></div></div>
           <div className="feature-item"><div className="feature-badge">3</div><div><strong>Restart after code changes.</strong><div className="muted">Restart both API and web dev server after backend/frontend reliability changes.</div></div></div>
         </div>
