@@ -193,10 +193,12 @@ class VoiceProfileService:
             curation_report=curation_report,
             progress_callback=progress_callback,
         )
-        if clone_dataset.get("status") in {"adaptation_ready", "zero_shot_ready", "limited_prompt_ready"}:
+        prompt_seconds = float((clone_dataset.get("prompt") or {}).get("prompt_seconds") or 0.0)
+        engine_prompt_ready = prompt_seconds >= float(self.voice_dataset_builder.settings.voice_prompt_min_seconds)
+        if clone_dataset.get("status") in {"adaptation_ready", "zero_shot_ready", "limited_prompt_ready"} and engine_prompt_ready:
             readiness_status = "ready"
         else:
-            readiness_status = processed_audio.readiness_status
+            readiness_status = "ready_with_warning" if clone_dataset.get("status") in {"adaptation_ready", "zero_shot_ready", "limited_prompt_ready"} else processed_audio.readiness_status
         stored_curation_report = self._compact_curation_report(curation_report)
 
         progress_callback({"stage": "saving_voice_profile", "percent": 98, "message": "Saving voice profile."})
@@ -259,6 +261,8 @@ class VoiceProfileService:
                         "manifest_path": clone_dataset.get("manifest_path"),
                         "adaptation_candidate": bool(clone_dataset.get("engine_readiness", {}).get("voxcpm2_lora_candidate")),
                         "zero_shot_candidate": clone_dataset.get("engine_readiness", {}).get("voxcpm2_ultimate_clone") == "ready",
+                        "engine_prompt_ready": engine_prompt_ready,
+                        "prompt_seconds": prompt_seconds,
                     },
                     "note": "Enrollment now builds a curated clone dataset and exact prompt bundle. VoxCPM2 is primary, Chatterbox is fallback, XTTS is legacy only.",
                 }

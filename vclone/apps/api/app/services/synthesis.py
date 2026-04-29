@@ -1,7 +1,10 @@
 import json
 import multiprocessing as mp
+import os
 from pathlib import Path
 from queue import Empty
+import shutil
+import subprocess
 import time
 from datetime import datetime, timezone
 
@@ -13,13 +16,14 @@ from app.models.generated_asset import GeneratedAsset
 from app.models.synthesis_job import SynthesisJob
 from app.models.voice_profile import VoiceProfile
 from app.services.audit import AuditService
+from app.services.audio_artifacts import inspect_audio_artifact, validate_voxcpm_reference_audio
 from app.services.asr_backcheck import ASRBackcheckService
 from app.services.evaluation import EvaluationService
 from app.services.engine_registry import EngineRegistry
 from app.services.mastering import AudioMasteringService
 from app.services.post_synthesis_qc import PostSynthesisQCService
 from app.services.storage import StorageService
-from app.services.text import chunk_text, normalize_text, split_for_regeneration
+from app.services.text import chunk_text, chunk_text_for_clone, normalize_text, split_for_regeneration
 from app.services.tts_engine import XTTSInferenceError
 
 
@@ -27,16 +31,152 @@ class SynthesisCancelledError(RuntimeError):
     pass
 
 
+_SMOKE_TEST_SENTENCE = "This is a complete smoke test sentence for checking whether the cloned voice can speak clearly without leaking prompt text."
+
+
+def _prequalify_candidates(
+    *,
+    registry,
+    candidate_plan: list[dict],
+    voice_profile_id: str,
+    mode: str,
+    work_dir: Path,
+    language: str | None,
+    voice_profile_report: dict,
+    asr_backcheck,
+    candidate_gating,
+    speaker_verification,
+    similarity_trusted: bool,
+) -> tuple[list[dict], list[dict]]:
+    qualified: list[dict] = []
+    failures: list[dict] = []
+    smoke_dir = work_dir / "smoke"
+    smoke_dir.mkdir(parents=True, exist_ok=True)
+
+    for index, candidate in enumerate(candidate_plan, start=1):
+        candidate_engine_name = str(candidate.get("engine_name") or "")
+        try:
+            validation = validate_voxcpm_reference_audio(
+                str(candidate.get("speaker_wav") or ""),
+                manifest=candidate,
+                artifact_type="model_candidate",
+                expected_duration_sec=candidate.get("expected_duration_sec"),
+            )
+            if not validation.valid:
+                failures.append(
+                    {
+                        "engine_name": candidate_engine_name,
+                        "label": candidate.get("label"),
+                        "clone_mode": candidate.get("clone_mode"),
+                        "error": validation.code,
+                        "validation": validation.to_dict(),
+                    }
+                )
+                continue
+            engine = registry.get_engine_by_name(candidate_engine_name)
+            smoke_path = smoke_dir / f"candidate-{index:02d}.wav"
+            synthesis = engine.synthesize(
+                _SMOKE_TEST_SENTENCE,
+                str(voice_profile_id),
+                str(mode),
+                str(smoke_path),
+                speaker_wav=str(candidate.get("speaker_wav") or ""),
+                language=language,
+                prompt_text=str(candidate.get("prompt_text") or ""),
+                voice_profile_report=voice_profile_report,
+                clone_mode=str(candidate.get("clone_mode") or "reference_only"),
+            )
+            backcheck = asr_backcheck.evaluate(
+                expected_text=_SMOKE_TEST_SENTENCE,
+                chunks=[_SMOKE_TEST_SENTENCE],
+                audio_path=str(smoke_path),
+            )
+            similarity = speaker_verification.verify(
+                reference_audio_path=str(candidate.get("speaker_wav") or ""),
+                candidate_audio_path=str(smoke_path),
+            )
+            gate_result = candidate_gating.evaluate(
+                mode=str(mode),
+                target_text=_SMOKE_TEST_SENTENCE,
+                observed_text=str(backcheck.get("observed_text") or ""),
+                prompt_text=str(candidate.get("prompt_text") or ""),
+                audio_path=str(smoke_path),
+                backcheck=backcheck,
+                similarity=similarity.to_dict(),
+                similarity_trusted=similarity_trusted,
+            )
+            if gate_result.passed:
+                qualified_candidate = dict(candidate)
+                qualified_candidate["smoke_test"] = {
+                    "status": "passed",
+                    "gate_result": gate_result.to_dict(),
+                    "backcheck": backcheck,
+                    "similarity": similarity.to_dict(),
+                    "synthesis": synthesis,
+                }
+                qualified.append(qualified_candidate)
+            else:
+                failed = {
+                    "engine_name": candidate_engine_name,
+                    "label": candidate.get("label"),
+                    "clone_mode": candidate.get("clone_mode"),
+                    "error": "smoke_test_failed_quality_gate",
+                    "gate_result": gate_result.to_dict(),
+                    "backcheck": backcheck,
+                    "similarity": similarity.to_dict(),
+                }
+                failures.append(failed)
+        except BaseException as exc:  # noqa: BLE001
+            failures.append(
+                {
+                    "engine_name": candidate_engine_name,
+                    "label": candidate.get("label"),
+                    "clone_mode": candidate.get("clone_mode"),
+                    "error": f"smoke_test_exception:{type(exc).__name__}: {exc}",
+                }
+            )
+    return qualified, failures
+
+
 def _synthesis_engine_worker(payload: dict, result_queue) -> None:
+    from app.services.asr_backcheck import ASRBackcheckService
+    from app.services.candidate_gating import CandidateGateService
     from app.services.engine_registry import EngineRegistry
+    from app.services.speaker_verification import SpeakerVerificationService
+    from app.services.similarity_calibration import SimilarityCalibrationService
+    import shutil
 
     try:
-        engine = EngineRegistry().get_engine_by_name(str(payload["engine_name"]))
+        registry = EngineRegistry()
         chunk_paths: list[str] = []
         engine_runs: list[dict] = []
+        candidate_selections: list[dict] = []
         chunk_texts: list[str] = list(payload.get("chunk_texts") or [])
+        candidate_plan: list[dict] = list(payload.get("candidate_plan") or [])
         chunk_dir = Path(str(payload["chunk_dir"]))
         chunk_dir.mkdir(parents=True, exist_ok=True)
+        asr_backcheck = ASRBackcheckService()
+        candidate_gating = CandidateGateService()
+        speaker_verification = SpeakerVerificationService()
+        similarity_calibration = SimilarityCalibrationService().calibrate(golden_ref_path=str(payload["speaker_wav"]))
+        qualified_candidates, smoke_failures = _prequalify_candidates(
+            registry=registry,
+            candidate_plan=candidate_plan,
+            voice_profile_id=str(payload["voice_profile_id"]),
+            mode=str(payload["mode"]),
+            work_dir=chunk_dir,
+            language=payload.get("language"),
+            voice_profile_report=payload.get("voice_profile_report") or {},
+            asr_backcheck=asr_backcheck,
+            candidate_gating=candidate_gating,
+            speaker_verification=speaker_verification,
+            similarity_trusted=similarity_calibration.trusted,
+        )
+        if qualified_candidates:
+            candidate_plan = qualified_candidates
+        elif candidate_plan:
+            raise RuntimeError(f"failed_profile_reference_invalid: {smoke_failures}")
+        locked_candidate: dict | None = None
         for index, render_text in enumerate(chunk_texts, start=1):
             result_queue.put(
                 {
@@ -45,20 +185,144 @@ def _synthesis_engine_worker(payload: dict, result_queue) -> None:
                     "total_chunks": len(chunk_texts),
                 }
             )
-            chunk_path = chunk_dir / f"chunk-{index:03d}.wav"
-            synthesis = engine.synthesize(
-                render_text,
-                str(payload["voice_profile_id"]),
-                str(payload["mode"]),
-                str(chunk_path),
-                speaker_wav=str(payload["speaker_wav"]),
-                language=payload.get("language"),
-                prompt_text=payload.get("prompt_text"),
-                voice_profile_report=payload.get("voice_profile_report") or {},
-            )
-            chunk_paths.append(str(chunk_path))
-            engine_runs.append(synthesis)
-        result_queue.put({"type": "done", "chunk_paths": chunk_paths, "engine_runs": engine_runs})
+            final_chunk_path = chunk_dir / f"chunk-{index:03d}.wav"
+            best_candidate: dict | None = None
+            failed_candidates: list[dict] = []
+            plan = ([locked_candidate] if locked_candidate else candidate_plan) or [
+                {
+                    "label": "default",
+                    "speaker_wav": str(payload["speaker_wav"]),
+                    "prompt_text": payload.get("prompt_text") or "",
+                    "clone_mode": "reference_only",
+                }
+            ]
+            for candidate_index, candidate in enumerate(plan, start=1):
+                candidate_path = chunk_dir / f"chunk-{index:03d}-cand-{candidate_index:02d}.wav"
+                candidate_engine_name = str(candidate.get("engine_name") or payload["engine_name"])
+                try:
+                    engine = registry.get_engine_by_name(candidate_engine_name)
+                    synthesis = engine.synthesize(
+                        render_text,
+                        str(payload["voice_profile_id"]),
+                        str(payload["mode"]),
+                        str(candidate_path),
+                        speaker_wav=str(candidate.get("speaker_wav") or payload["speaker_wav"]),
+                        language=payload.get("language"),
+                        prompt_text=str(candidate.get("prompt_text") or payload.get("prompt_text") or ""),
+                        voice_profile_report=payload.get("voice_profile_report") or {},
+                        clone_mode=str(candidate.get("clone_mode") or "reference_only"),
+                    )
+                    backcheck = asr_backcheck.evaluate(expected_text=render_text, chunks=[render_text], audio_path=str(candidate_path))
+                    similarity = speaker_verification.verify(
+                        reference_audio_path=str(candidate.get("speaker_wav") or payload["speaker_wav"]),
+                        candidate_audio_path=str(candidate_path),
+                    )
+                    gate_result = candidate_gating.evaluate(
+                        mode=str(payload["mode"]),
+                        target_text=render_text,
+                        observed_text=str(backcheck.get("observed_text") or ""),
+                        prompt_text=str(candidate.get("prompt_text") or ""),
+                        audio_path=str(candidate_path),
+                        backcheck=backcheck,
+                        similarity=similarity.to_dict(),
+                        similarity_trusted=similarity_calibration.trusted,
+                    )
+                    if not gate_result.passed:
+                        failed_candidates.append(
+                            {
+                                "engine_name": candidate_engine_name,
+                                "label": candidate.get("label"),
+                                "clone_mode": candidate.get("clone_mode"),
+                                "error": "failed_quality_gate",
+                                "gate_result": gate_result.to_dict(),
+                            }
+                        )
+                        continue
+                    candidate_result = {
+                        "candidate": candidate,
+                        "synthesis": synthesis,
+                        "backcheck": backcheck,
+                        "similarity": similarity.to_dict(),
+                        "gate_result": gate_result.to_dict(),
+                        "quality_score": gate_result.quality_score,
+                        "error_cost": gate_result.error_cost,
+                        "path": str(candidate_path),
+                    }
+                    if best_candidate is None or gate_result.quality_score > float(best_candidate["quality_score"]):
+                        best_candidate = candidate_result
+                except BaseException as exc:  # noqa: BLE001 - one candidate failing must not abort the whole job.
+                    failed_candidates.append(
+                        {
+                            "engine_name": candidate_engine_name,
+                            "label": candidate.get("label"),
+                            "clone_mode": candidate.get("clone_mode"),
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+                    continue
+
+            if best_candidate is None:
+                raise RuntimeError(f"All synthesis candidates failed: {failed_candidates}")
+
+            if Path(best_candidate["path"]).resolve() != final_chunk_path.resolve():
+                shutil.copyfile(best_candidate["path"], final_chunk_path)
+            if locked_candidate is None:
+                locked_candidate = dict(best_candidate["candidate"])
+            best_synthesis = dict(best_candidate["synthesis"])
+            best_synthesis["candidate_selection"] = {
+                "engine_name": best_candidate["candidate"].get("engine_name") or payload["engine_name"],
+                "label": best_candidate["candidate"].get("label"),
+                "clone_mode": best_candidate["candidate"].get("clone_mode"),
+                "quality_score": best_candidate["quality_score"],
+                "error_cost": best_candidate["error_cost"],
+                "score_direction": "higher_quality_score",
+                "selected_reason": "highest valid quality_score after hard quality gates",
+                "gate_result": best_candidate["gate_result"],
+                "backcheck": best_candidate["backcheck"],
+                "similarity": best_candidate["similarity"],
+                "similarity_calibration": similarity_calibration.to_dict(),
+                "smoke_test_failures": smoke_failures,
+                "failed_candidates": failed_candidates,
+                "global_prompt_locked": True,
+            }
+            chunk_paths.append(str(final_chunk_path))
+            engine_runs.append(best_synthesis)
+            candidate_selections.append(best_synthesis["candidate_selection"])
+        result_queue.put(
+            {
+                "type": "done",
+                "chunk_paths": chunk_paths,
+                "engine_runs": engine_runs,
+                "candidate_selections": candidate_selections,
+                "qualified_candidates": candidate_plan,
+                "smoke_test_failures": smoke_failures,
+            }
+        )
+    except BaseException as exc:  # noqa: BLE001 - worker must report all failures to parent when possible.
+        result_queue.put({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
+
+
+def _synthesis_single_chunk_worker(payload: dict, result_queue) -> None:
+    from app.services.engine_registry import EngineRegistry
+
+    try:
+        registry = EngineRegistry()
+        engine = registry.get_engine_by_name(str(payload["engine_name"]))
+        candidate = dict(payload.get("candidate") or {})
+        output_path = Path(str(payload["output_path"]))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        synthesis = engine.synthesize(
+            str(payload["text"]),
+            str(payload["voice_profile_id"]),
+            str(payload["mode"]),
+            str(output_path),
+            speaker_wav=str(candidate.get("speaker_wav") or payload["speaker_wav"]),
+            language=payload.get("language"),
+            prompt_text=str(candidate.get("prompt_text") or payload.get("prompt_text") or ""),
+            voice_profile_report=payload.get("voice_profile_report") or {},
+            clone_mode=str(candidate.get("clone_mode") or "reference_only"),
+        )
+        result_queue.put({"type": "done", "output_path": str(output_path), "synthesis": synthesis})
     except BaseException as exc:  # noqa: BLE001 - worker must report all failures to parent when possible.
         result_queue.put({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
 
@@ -110,9 +374,12 @@ class SynthesisService:
             reason = engine_selection["capabilities"].get("runtime", {}).get("reason", "Selected clone engine is unavailable.")
             raise ValueError(f"Selected clone engine '{engine.name}' is unavailable. {reason}")
         normalized = normalize_text(text)
-        chunks = chunk_text(normalized, max_chars=self.settings.synthesis_max_chunk_chars)
+        chunks = chunk_text_for_clone(normalized, mode=mode, max_chars=self.settings.synthesis_max_chunk_chars)
+        if len(chunks) >= int(self.settings.synthesis_long_text_chunk_threshold):
+            chunks = chunk_text_for_clone(normalized, mode=mode, max_chars=int(self.settings.synthesis_long_text_chunk_chars))
         if not chunks:
             raise ValueError("Text to synthesize is empty after normalization")
+        long_form_synthesis = len(chunks) >= int(self.settings.synthesis_long_text_chunk_threshold)
         qc_plan = self.post_qc.evaluate_chunks(chunks)
         regeneration_plan = self.post_qc.regeneration_plan(chunks, qc_plan)
         if mode == "final" and (self.settings.fail_on_derived_final_master or require_native_master):
@@ -120,6 +387,10 @@ class SynthesisService:
                 raise ValueError(
                     "Requested final delivery would be derived rather than native. Lower the requested delivery spec, switch to preview/mono 24 kHz, or integrate a native final-render engine."
                 )
+
+        candidate_plan = self._build_candidate_plan(engine.name, profile_report, reference_path, prompt_text, mode)
+        if long_form_synthesis and engine.name == "voxcpm2":
+            candidate_plan = candidate_plan[: max(1, int(self.settings.synthesis_long_text_candidate_limit))]
 
         job = SynthesisJob(
             user_id=profile.user_id,
@@ -144,6 +415,8 @@ class SynthesisService:
                     "engine_selection_rationale": engine_selection["rationale"],
                     "preflight_qc": qc_plan,
                     "regeneration_plan": regeneration_plan,
+                    "candidate_plan": candidate_plan,
+                    "long_form_synthesis": long_form_synthesis,
                     "cancel_requested": False,
                     "last_heartbeat_at": self._now_iso(),
                     "worker_started_at": None,
@@ -230,6 +503,7 @@ class SynthesisService:
         chunk_dir = output_dir / "chunks"
         chunk_dir.mkdir(parents=True, exist_ok=True)
         native_mix_path = output_dir / "native-mix.wav"
+        synthesis_manifest_path = output_dir / "manifest.json"
         output_path = output_dir / f"output.{delivery_request['format']}"
 
         job.status = "running"
@@ -256,9 +530,16 @@ class SynthesisService:
                 language=language_code,
                 prompt_text=prompt_text,
                 voice_profile_report=profile_report,
+                candidate_plan=list(request.get("candidate_plan") or []),
             )
-            chunk_paths = isolated["chunk_paths"]
+            chunk_paths = self._apply_inter_chunk_pauses(isolated["chunk_paths"], chunks)
             engine_runs = isolated["engine_runs"]
+            candidate_selections = isolated.get("candidate_selections", [])
+            qualified_candidates = isolated.get("qualified_candidates", [])
+            smoke_test_failures = isolated.get("smoke_test_failures", [])
+            failed_chunks = isolated.get("failed_chunks", [])
+            partial_output = bool(isolated.get("partial", False))
+            progress_manifest_path = isolated.get("progress_manifest_path")
 
             self._update_job_progress(job, stage="mastering", percent=80, message="Concatenating and mastering generated chunks.")
             concat_info = self.mastering.concatenate_wav_chunks(chunk_paths, str(native_mix_path))
@@ -271,8 +552,22 @@ class SynthesisService:
             )
 
             if job.mode == "preview":
-                asr_backcheck = {"status": "deferred", "reason": "Preview generation skips heavy ASR backcheck for responsiveness."}
-                evaluation_payload = {"status": "deferred", "reason": "Preview generation skips heavy speaker/evaluation checks for responsiveness."}
+                asr_backcheck = {
+                    "status": "measured_by_candidate_gate",
+                    "reason": "Clone preview uses per-candidate ASR gates before selecting output.",
+                    "candidate_selections": candidate_selections,
+                    "failed_chunks": failed_chunks,
+                    "partial_output": partial_output,
+                    "progress_manifest_path": progress_manifest_path,
+                }
+                evaluation_payload = {
+                    "status": "measured_by_candidate_gate",
+                    "reason": "Clone preview uses prompt-leak, WER, script, duration, repetition, and similarity gates.",
+                    "candidate_selections": candidate_selections,
+                    "failed_chunks": failed_chunks,
+                    "partial_output": partial_output,
+                    "progress_manifest_path": progress_manifest_path,
+                }
             else:
                 self._update_job_progress(job, stage="evaluation", percent=90, message="Running final ASR/evaluation checks.")
                 asr_backcheck = self.asr_backcheck.evaluate(expected_text=normalized, chunks=chunks, audio_path=str(output_path))
@@ -321,6 +616,13 @@ class SynthesisService:
                     "asr_backcheck": asr_backcheck,
                     "evaluation": evaluation_payload,
                     "concat": concat_info,
+                    "candidate_plan": request.get("candidate_plan", []),
+                    "qualified_candidates": qualified_candidates,
+                    "smoke_test_failures": smoke_test_failures,
+                    "candidate_selections": candidate_selections,
+                    "failed_chunks": failed_chunks,
+                    "partial_output": partial_output,
+                    "progress_manifest_path": progress_manifest_path,
                     "clone_profile": {
                         "dataset_status": profile_report.get("clone_dataset", {}).get("status"),
                         "curated_minutes": profile_report.get("clone_dataset", {}).get("curated_minutes"),
@@ -341,6 +643,28 @@ class SynthesisService:
             checksum_sha256=delivery_report["delivery"]["checksum_sha256"],
         )
 
+        synthesis_manifest = {
+            "job_id": job.id,
+            "voice_profile_id": job.voice_profile_id,
+            "engine_name": engine.name,
+            "mode": job.mode,
+            "locale": locale,
+            "normalized_text": normalized,
+            "chunks": chunks,
+            "candidate_plan": request.get("candidate_plan", []),
+            "qualified_candidates": qualified_candidates,
+            "smoke_test_failures": smoke_test_failures,
+            "candidate_selections": candidate_selections,
+            "failed_chunks": failed_chunks,
+            "partial_output": partial_output,
+            "progress_manifest_path": progress_manifest_path,
+            "chunk_paths": chunk_paths,
+            "reference_path": reference_path,
+            "prompt_text": prompt_text,
+            "output_path": str(output_path),
+        }
+        synthesis_manifest_path.write_text(json.dumps(synthesis_manifest, indent=2), encoding="utf-8")
+
         if require_native_master and not delivery_report["spotify"]["native_master_ok"]:
             job.status = "failed"
             self._update_job_progress(job, stage="failed", percent=100, message="Native master was required, but output is derived.")
@@ -348,9 +672,21 @@ class SynthesisService:
             self.db.commit()
             return job
 
+        if self._selected_candidate_failed_gate(candidate_selections):
+            job.status = "failed_quality_gate"
+            self._update_job_progress(job, stage="failed_quality_gate", percent=100, message="Selected candidate failed clone quality gate.")
+            self.db.add(job)
+            self.db.commit()
+            return job
+
         self.db.add(asset)
-        job.status = "completed"
-        self._update_job_progress(job, stage="completed", percent=100, message="Synthesis completed. Download is ready.")
+        job.status = "completed_partial" if partial_output else "completed"
+        self._update_job_progress(
+            job,
+            stage=job.status,
+            percent=100,
+            message="Synthesis produced partial audio. Retry to resume missing chunks." if partial_output else "Synthesis completed. Download is ready.",
+        )
         self.db.add(job)
         self.db.commit()
         self.audit.log(actor_user_id=profile.user_id, action="synthesis.created", target_type="synthesis_job", target_id=job.id)
@@ -419,6 +755,13 @@ class SynthesisService:
             "evaluation": metadata.get("evaluation", {}),
             "asr_backcheck": metadata.get("asr_backcheck", {}),
             "clone_profile": metadata.get("clone_profile", {}),
+            "candidate_plan": metadata.get("candidate_plan", []),
+            "qualified_candidates": metadata.get("qualified_candidates", []),
+            "smoke_test_failures": metadata.get("smoke_test_failures", []),
+            "candidate_selections": metadata.get("candidate_selections", []),
+            "failed_chunks": metadata.get("failed_chunks", []),
+            "partial_output": bool(metadata.get("partial_output", False)),
+            "progress_manifest_path": metadata.get("progress_manifest_path"),
             "engine_selection": metadata.get("engine_selection", {}),
             "engine_registry": metadata.get("engine_registry", self.engine_registry.describe()),
         }
@@ -438,22 +781,212 @@ class SynthesisService:
         except json.JSONDecodeError:
             return {}
 
+    def _prefer_existing_path(self, *candidates: object) -> str:
+        normalized: list[str] = []
+        for candidate in candidates:
+            value = str(candidate or "").strip()
+            if not value:
+                continue
+            normalized.append(value)
+            if Path(value).exists():
+                return value
+        return normalized[0] if normalized else ""
+
+    def _preferred_candidate_audio_path(self, candidate: dict, fallback_reference_path: str) -> str:
+        return self._prefer_existing_path(
+            candidate.get("audio_path"),
+            candidate.get("audio_path_16k"),
+            fallback_reference_path,
+        )
+
     def _resolve_clone_reference(self, profile: VoiceProfile, profile_report: dict) -> tuple[str, str]:
         prompt = profile_report.get("clone_dataset", {}).get("prompt", {})
-        reference_path = (
-            prompt.get("prompt_audio_path_16k")
-            or prompt.get("prompt_audio_path")
-            or prompt.get("single_prompt_audio_path")
-            or profile.sample_audio_path
+        reference_path = self._prefer_existing_path(
+            prompt.get("golden_ref_audio_path"),
+            prompt.get("golden_ref_audio_path_16k"),
+            prompt.get("prompt_audio_path"),
+            prompt.get("prompt_audio_path_16k"),
+            prompt.get("single_prompt_audio_path"),
+            prompt.get("single_prompt_audio_path_16k"),
+            profile.sample_audio_path,
         )
-        prompt_text = str(prompt.get("prompt_text") or "").strip()
-        return str(reference_path or ""), prompt_text
+        prompt_text = str(prompt.get("golden_ref_text") or prompt.get("prompt_text") or "").strip()
+        reference_path = str(reference_path or "")
+        if reference_path and Path(reference_path).exists():
+            validation = validate_voxcpm_reference_audio(reference_path, artifact_type="model_candidate")
+            if validation.valid:
+                return reference_path, prompt_text
+            fallback_reference = self._build_synthesis_reference_slice(profile, profile_report, reference_path)
+            if fallback_reference:
+                return fallback_reference, prompt_text
+        return reference_path, prompt_text
+
+    def _build_synthesis_reference_slice(self, profile: VoiceProfile, profile_report: dict, current_reference_path: str) -> str:
+        source_candidates = [
+            profile_report.get("curation", {}).get("curated_audio_path"),
+            profile_report.get("clone_dataset", {}).get("prompt", {}).get("prompt_pack_audio_path"),
+            profile_report.get("clone_dataset", {}).get("processed_audio_path"),
+            profile_report.get("audio_processing", {}).get("processing_audio_path"),
+            profile_report.get("audio_processing", {}).get("conditioning_audio_path"),
+            profile_report.get("clone_dataset", {}).get("source_audio_path"),
+            getattr(profile, "source_audio_path", ""),
+            getattr(profile, "sample_audio_path", ""),
+        ]
+        out_dir = Path(current_reference_path).parent if current_reference_path else Path("uploads")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        output = out_dir / "synthesis_fallback_ref.wav"
+        target_seconds = min(
+            float(self.settings.voice_prompt_max_seconds),
+            max(float(self.settings.voice_prompt_target_seconds), float(self.settings.voice_prompt_min_seconds)),
+        )
+        for raw_source in source_candidates:
+            source_value = str(raw_source or "").strip()
+            if not source_value:
+                continue
+            source = Path(source_value)
+            if not source.exists() or not source.is_file():
+                continue
+            source_validation = validate_voxcpm_reference_audio(source, artifact_type="model_candidate")
+            if source_validation.valid:
+                return str(source)
+            source_duration = source_validation.stats.duration_sec or 0.0
+            if source_duration < float(self.settings.voice_prompt_min_seconds):
+                continue
+            ffmpeg = shutil.which("ffmpeg")
+            if ffmpeg:
+                result = subprocess.run(
+                    [ffmpeg, "-y", "-i", str(source), "-t", f"{target_seconds:.3f}", "-ar", "24000", "-ac", "1", str(output)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0 and output.exists() and output.stat().st_size > 44:
+                    validation = validate_voxcpm_reference_audio(output, artifact_type="model_candidate")
+                    if validation.valid:
+                        return str(output)
+            elif source_duration <= float(self.settings.voice_prompt_max_seconds):
+                shutil.copyfile(source, output)
+                validation = validate_voxcpm_reference_audio(output, artifact_type="model_candidate")
+                if validation.valid:
+                    return str(output)
+        return ""
+
+    def _build_candidate_plan(self, engine_name: str, profile_report: dict, reference_path: str, prompt_text: str, mode: str) -> list[dict]:
+        prompt_bundle = profile_report.get("clone_dataset", {}).get("prompt", {})
+        prompt_candidates = list(prompt_bundle.get("candidate_prompts") or [])
+        if not prompt_candidates:
+            prompt_candidates = [
+                {
+                    "rank": 1,
+                    "audio_path": reference_path,
+                    "audio_path_16k": reference_path,
+                    "text": prompt_text,
+                    "safe_for_prompt": True,
+                }
+            ]
+
+        candidate_limit = int(
+            self.settings.synthesis_preview_candidate_limit
+            if mode == "preview"
+            else self.settings.synthesis_final_candidate_limit
+        )
+        selected_candidates = prompt_candidates[: max(candidate_limit, 1)]
+        plan: list[dict] = []
+
+        if engine_name == "voxcpm2":
+            for candidate in selected_candidates:
+                plan.append(
+                    {
+                        "engine_name": "voxcpm2",
+                        "label": f"ref-only-prompt-{candidate.get('rank', len(plan) + 1)}",
+                        "speaker_wav": self._preferred_candidate_audio_path(candidate, reference_path),
+                        "prompt_text": "",
+                        "clone_mode": "reference_only",
+                        "safe_for_prompt": bool(candidate.get("safe_for_prompt", True)),
+                        "expected_duration_sec": candidate.get("expected_duration_sec") or candidate.get("duration_seconds"),
+                        "actual_duration_sec": candidate.get("actual_duration_sec") or candidate.get("duration_seconds"),
+                        "sample_rate": candidate.get("sample_rate"),
+                        "channels": candidate.get("channels"),
+                        "frames": candidate.get("frames"),
+                        "non_silent_duration_sec": candidate.get("non_silent_duration_sec"),
+                        "manifest_path": candidate.get("manifest_path"),
+                    }
+                )
+            first = selected_candidates[0] if selected_candidates else None
+            ultimate_enabled = bool(getattr(self.settings, "voxcpm_enable_ultimate", False))
+            if ultimate_enabled and first and first.get("text") and not bool(first.get("hifi_leak_failed")):
+                plan.append(
+                    {
+                        "engine_name": "voxcpm2",
+                        "label": "ultimate-prompt-1",
+                        "speaker_wav": self._preferred_candidate_audio_path(first, reference_path),
+                        "prompt_text": first.get("text") or prompt_text,
+                        "clone_mode": "ultimate",
+                        "safe_for_prompt": bool(first.get("safe_for_prompt", True)),
+                        "expected_duration_sec": first.get("expected_duration_sec") or first.get("duration_seconds"),
+                    }
+                )
+            chatterbox_engine = self.engine_registry.get_engine_by_name("chatterbox")
+            if mode == "preview" and self.settings.synthesis_enable_chatterbox_bakeoff and chatterbox_engine.runtime_status().get("available"):
+                for candidate in selected_candidates[:2]:
+                    plan.append(
+                        {
+                            "engine_name": "chatterbox",
+                            "label": f"chatterbox-prompt-{candidate.get('rank', len(plan) + 1)}",
+                            "speaker_wav": self._preferred_candidate_audio_path(candidate, reference_path),
+                            "prompt_text": "",
+                            "clone_mode": "prompt_clone",
+                        }
+                    )
+        elif engine_name == "chatterbox":
+            for candidate in selected_candidates:
+                plan.append(
+                    {
+                        "engine_name": "chatterbox",
+                        "label": f"prompt-clone-{candidate.get('rank', len(plan) + 1)}",
+                        "speaker_wav": self._preferred_candidate_audio_path(candidate, reference_path),
+                        "prompt_text": "",
+                        "clone_mode": "prompt_clone",
+                    }
+                )
+        else:
+            plan.append(
+                {
+                    "engine_name": engine_name,
+                    "label": "default",
+                    "speaker_wav": reference_path,
+                    "prompt_text": prompt_text,
+                    "clone_mode": "reference_only",
+                }
+            )
+
+        deduped: list[dict] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for item in plan:
+            key = (
+                str(item.get("engine_name") or ""),
+                str(item.get("speaker_wav") or ""),
+                str(item.get("prompt_text") or ""),
+                str(item.get("clone_mode") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped
+
+    def _selected_candidate_failed_gate(self, selections: list[dict]) -> bool:
+        for selection in selections:
+            gate = selection.get("gate_result") or {}
+            if gate and not bool(gate.get("passed")):
+                return True
+        return False
 
     def _synthesis_progress_message(self, engine_name: str, index: int, total_chunks: int) -> str:
         if engine_name == "voxcpm2":
             return (
                 f"Synthesizing chunk {index}/{total_chunks} with VoxCPM2. "
-                "This is the primary clone model. First model load can take several minutes; CPU/Mac runs can be slow."
+                "This is the primary clone model. A single global prompt candidate is locked for the whole job to prevent timbre drift."
             )
         if engine_name == "chatterbox":
             return f"Synthesizing chunk {index}/{total_chunks} with Chatterbox CPU/GPU prompt cloning."
@@ -470,102 +1003,209 @@ class SynthesisService:
         language: str,
         prompt_text: str,
         voice_profile_report: dict,
+        candidate_plan: list[dict],
     ) -> dict:
         ctx = mp.get_context("spawn")
-        result_queue = ctx.Queue()
-        payload = {
-            "engine_name": engine_name,
-            "voice_profile_id": job.voice_profile_id,
-            "mode": job.mode,
-            "chunk_texts": chunk_texts,
-            "chunk_dir": chunk_dir,
-            "speaker_wav": speaker_wav,
-            "language": language,
-            "prompt_text": prompt_text,
-            "voice_profile_report": voice_profile_report,
-        }
-        process = ctx.Process(target=_synthesis_engine_worker, args=(payload, result_queue))
-        process.start()
-        worker_started_at = self._now_iso()
-        self._update_job_progress(
-            job,
-            stage="synthesizing",
-            percent=10,
-            message=self._synthesis_progress_message(engine_name, 1, len(chunk_texts)),
-            current_chunk=0,
-            total_chunks=len(chunk_texts),
-            worker_pid=process.pid or 0,
-            worker_started_at=worker_started_at,
-        )
-
-        started_at = time.monotonic()
+        chunk_dir_path = Path(chunk_dir)
+        chunk_dir_path.mkdir(parents=True, exist_ok=True)
+        progress_path = chunk_dir_path / "progress.json"
         heartbeat_interval = max(1, int(self.settings.synthesis_heartbeat_interval_seconds))
-        timeout_seconds = max(int(self.settings.synthesis_chunk_timeout_seconds), len(chunk_texts) * heartbeat_interval * 3)
+        timeout_seconds = max(1, int(self.settings.synthesis_single_chunk_timeout_seconds))
+        long_form = len(chunk_texts) >= int(self.settings.synthesis_long_text_chunk_threshold)
 
-        try:
-            while True:
-                if self._cancel_requested(job.id):
-                    self._terminate_process(process)
-                    raise SynthesisCancelledError("Synthesis cancelled by user.")
+        def valid_existing_chunk(path: Path) -> bool:
+            stats = inspect_audio_artifact(path)
+            return bool(stats.exists and stats.readable and stats.frames and stats.frames > 0 and stats.duration_sec and stats.duration_sec > 0.2)
 
-                elapsed = int(time.monotonic() - started_at)
-                if elapsed >= timeout_seconds:
-                    self._terminate_process(process)
-                    raise XTTSInferenceError(
-                        f"Synthesis worker exceeded timeout of {timeout_seconds} seconds and was terminated. "
-                        "The selected engine likely hung or crashed during model generation."
-                    )
-
-                try:
-                    event = result_queue.get(timeout=heartbeat_interval)
-                except Empty:
-                    if not process.is_alive() and process.exitcode is not None:
-                        break
-                    self._update_job_progress(
-                        job,
-                        stage="synthesizing",
-                        percent=min(75, 10 + int((elapsed / max(timeout_seconds, 1)) * 20)),
-                        message=f"{self._synthesis_progress_message(engine_name, 1, len(chunk_texts))} Worker alive for {elapsed}s.",
-                        current_chunk=int((json.loads(job.request_json or "{}").get("progress") or {}).get("current_chunk", 1) or 1),
-                        total_chunks=len(chunk_texts),
-                        worker_pid=process.pid or 0,
-                    )
-                    continue
-
-                event_type = event.get("type")
-                if event_type == "progress":
-                    current_chunk = int(event.get("current_chunk") or 1)
-                    total_chunks = int(event.get("total_chunks") or len(chunk_texts) or 1)
-                    self._update_job_progress(
-                        job,
-                        stage="synthesizing",
-                        percent=10 + int((current_chunk - 1) / max(total_chunks, 1) * 65),
-                        message=self._synthesis_progress_message(engine_name, current_chunk, total_chunks),
-                        current_chunk=current_chunk,
-                        total_chunks=total_chunks,
-                        worker_pid=process.pid or 0,
-                    )
-                    continue
-                if event_type == "done":
-                    process.join(timeout=1)
-                    return {
-                        "chunk_paths": list(event.get("chunk_paths") or []),
-                        "engine_runs": list(event.get("engine_runs") or []),
-                    }
-                if event_type == "error":
-                    self._terminate_process(process)
-                    raise XTTSInferenceError(str(event.get("error") or "Isolated synthesis worker failed."))
-
-            self._terminate_process(process)
-            raise XTTSInferenceError(
-                f"{engine_name} worker exited unexpectedly with code {process.exitcode}. "
-                "This usually indicates a native runtime crash inside the model backend."
-            )
-        finally:
+        def load_progress() -> dict:
+            if not progress_path.exists():
+                return {"job_id": job.id, "voice_profile_id": job.voice_profile_id, "engine_name": engine_name, "chunks": []}
             try:
-                result_queue.close()
+                return json.loads(progress_path.read_text(encoding="utf-8"))
             except Exception:
-                pass
+                return {"job_id": job.id, "voice_profile_id": job.voice_profile_id, "engine_name": engine_name, "chunks": []}
+
+        def save_progress(progress: dict) -> None:
+            progress_path.write_text(json.dumps(progress, indent=2), encoding="utf-8")
+
+        def upsert_chunk(progress: dict, payload: dict) -> None:
+            rows = list(progress.get("chunks") or [])
+            index = int(payload["index"])
+            replaced = False
+            for pos, row in enumerate(rows):
+                if int(row.get("index") or 0) == index:
+                    rows[pos] = {**row, **payload}
+                    replaced = True
+                    break
+            if not replaced:
+                rows.append(payload)
+            progress["chunks"] = sorted(rows, key=lambda row: int(row.get("index") or 0))
+            save_progress(progress)
+
+        registry = EngineRegistry()
+        asr_backcheck = ASRBackcheckService()
+        candidate_gating = __import__("app.services.candidate_gating", fromlist=["CandidateGateService"]).CandidateGateService()
+        speaker_verification = __import__("app.services.speaker_verification", fromlist=["SpeakerVerificationService"]).SpeakerVerificationService()
+        similarity_calibration = __import__("app.services.similarity_calibration", fromlist=["SimilarityCalibrationService"]).SimilarityCalibrationService().calibrate(golden_ref_path=speaker_wav)
+        candidate_plan = list(candidate_plan or [])
+        if long_form and engine_name == "voxcpm2":
+            candidate_plan = candidate_plan[: max(1, int(self.settings.synthesis_long_text_candidate_limit))]
+
+        if long_form and candidate_plan:
+            locked_candidate = dict(candidate_plan[0])
+            validation = validate_voxcpm_reference_audio(
+                str(locked_candidate.get("speaker_wav") or speaker_wav),
+                manifest=locked_candidate,
+                artifact_type="model_candidate",
+                expected_duration_sec=locked_candidate.get("expected_duration_sec"),
+            )
+            if not validation.valid:
+                raise XTTSInferenceError(f"Long-form reference candidate is invalid: {validation.message}")
+            smoke_failures: list[dict] = []
+            qualified_candidates = [locked_candidate]
+        else:
+            qualified_candidates, smoke_failures = _prequalify_candidates(
+                registry=registry,
+                candidate_plan=candidate_plan,
+                voice_profile_id=str(job.voice_profile_id),
+                mode=str(job.mode),
+                work_dir=chunk_dir_path,
+                language=language,
+                voice_profile_report=voice_profile_report,
+                asr_backcheck=asr_backcheck,
+                candidate_gating=candidate_gating,
+                speaker_verification=speaker_verification,
+                similarity_trusted=similarity_calibration.trusted,
+            )
+            if not qualified_candidates and candidate_plan:
+                raise XTTSInferenceError(f"failed_profile_reference_invalid: {smoke_failures}")
+            locked_candidate = dict(qualified_candidates[0]) if qualified_candidates else {
+                "engine_name": engine_name,
+                "label": "default",
+                "speaker_wav": speaker_wav,
+                "prompt_text": prompt_text,
+                "clone_mode": "reference_only",
+            }
+
+        progress = load_progress()
+        progress["locked_candidate"] = locked_candidate
+        progress["total_chunks"] = len(chunk_texts)
+        save_progress(progress)
+
+        chunk_paths: list[str] = []
+        engine_runs: list[dict] = []
+        candidate_selections: list[dict] = []
+        failed_chunks: list[dict] = []
+
+        for index, render_text in enumerate(chunk_texts, start=1):
+            final_chunk_path = chunk_dir_path / f"chunk-{index:03d}.wav"
+            if bool(self.settings.synthesis_resume_existing_chunks) and valid_existing_chunk(final_chunk_path):
+                chunk_paths.append(str(final_chunk_path))
+                upsert_chunk(progress, {"index": index, "text": render_text, "path": str(final_chunk_path), "status": "completed", "resumed": True})
+                continue
+
+            if self._cancel_requested(job.id):
+                raise SynthesisCancelledError("Synthesis cancelled by user.")
+
+            self._update_job_progress(
+                job,
+                stage="synthesizing",
+                percent=10 + int((index - 1) / max(len(chunk_texts), 1) * 65),
+                message=self._synthesis_progress_message(engine_name, index, len(chunk_texts)),
+                current_chunk=index,
+                total_chunks=len(chunk_texts),
+            )
+            upsert_chunk(progress, {"index": index, "text": render_text, "path": str(final_chunk_path), "status": "running", "started_at": self._now_iso()})
+
+            result_queue = ctx.Queue()
+            payload = {
+                "engine_name": engine_name,
+                "voice_profile_id": job.voice_profile_id,
+                "mode": job.mode,
+                "text": render_text,
+                "output_path": str(final_chunk_path),
+                "speaker_wav": speaker_wav,
+                "language": language,
+                "prompt_text": prompt_text,
+                "voice_profile_report": voice_profile_report,
+                "candidate": locked_candidate,
+            }
+            process = ctx.Process(target=_synthesis_single_chunk_worker, args=(payload, result_queue))
+            process.start()
+            started_at = time.monotonic()
+            event: dict | None = None
+
+            try:
+                while True:
+                    if self._cancel_requested(job.id):
+                        self._terminate_process(process)
+                        raise SynthesisCancelledError("Synthesis cancelled by user.")
+                    elapsed = int(time.monotonic() - started_at)
+                    if elapsed >= timeout_seconds:
+                        self._terminate_process(process)
+                        event = {"type": "timeout", "error": f"chunk {index} exceeded timeout of {timeout_seconds}s"}
+                        break
+                    try:
+                        event = result_queue.get(timeout=heartbeat_interval)
+                        break
+                    except Empty:
+                        if not process.is_alive() and process.exitcode is not None:
+                            event = {"type": "error", "error": f"chunk worker exited with code {process.exitcode}"}
+                            break
+                        self._update_job_progress(
+                            job,
+                            stage="synthesizing",
+                            percent=10 + int((index - 1) / max(len(chunk_texts), 1) * 65),
+                            message=f"{self._synthesis_progress_message(engine_name, index, len(chunk_texts))} Chunk alive for {elapsed}s.",
+                            current_chunk=index,
+                            total_chunks=len(chunk_texts),
+                            worker_pid=process.pid or 0,
+                        )
+            finally:
+                try:
+                    result_queue.close()
+                except Exception:
+                    pass
+
+            if event and event.get("type") == "done" and valid_existing_chunk(final_chunk_path):
+                process.join(timeout=1)
+                synthesis_payload = dict(event.get("synthesis") or {})
+                selection = {
+                    "engine_name": locked_candidate.get("engine_name") or engine_name,
+                    "label": locked_candidate.get("label"),
+                    "clone_mode": locked_candidate.get("clone_mode"),
+                    "selected_reason": "locked_reference_candidate_for_resumable_long_form",
+                    "global_prompt_locked": True,
+                }
+                synthesis_payload["candidate_selection"] = selection
+                chunk_paths.append(str(final_chunk_path))
+                engine_runs.append(synthesis_payload)
+                candidate_selections.append(selection)
+                upsert_chunk(progress, {"index": index, "text": render_text, "path": str(final_chunk_path), "status": "completed", "completed_at": self._now_iso(), "error": None})
+                continue
+
+            error = str((event or {}).get("error") or "unknown chunk failure")
+            failed_chunks.append({"index": index, "error": error})
+            upsert_chunk(progress, {"index": index, "text": render_text, "path": str(final_chunk_path), "status": "failed_timeout" if (event or {}).get("type") == "timeout" else "failed", "error": error, "completed_at": self._now_iso()})
+            if not bool(self.settings.synthesis_allow_partial_output):
+                raise XTTSInferenceError(error)
+            if job.mode == "final":
+                break
+            continue
+
+        if not chunk_paths:
+            raise XTTSInferenceError(f"No chunks were generated successfully. Failed chunks: {failed_chunks}")
+
+        return {
+            "chunk_paths": chunk_paths,
+            "engine_runs": engine_runs or [{"engine": engine_name, "candidate_selection": {"label": locked_candidate.get("label")}}],
+            "candidate_selections": candidate_selections,
+            "qualified_candidates": qualified_candidates,
+            "smoke_test_failures": smoke_failures,
+            "failed_chunks": failed_chunks,
+            "partial": bool(failed_chunks) or len(chunk_paths) < len(chunk_texts),
+            "progress_manifest_path": str(progress_path),
+        }
 
     def _terminate_process(self, process: mp.Process) -> None:
         if not process.is_alive():
@@ -638,3 +1278,51 @@ class SynthesisService:
 
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _apply_inter_chunk_pauses(self, chunk_paths: list[str], chunk_texts: list[str]) -> list[str]:
+        if len(chunk_paths) <= 1:
+            return chunk_paths
+        try:
+            import numpy as np
+            import soundfile as sf
+        except Exception:
+            return chunk_paths
+
+        adjusted_paths: list[str] = []
+        for index, chunk_path in enumerate(chunk_paths):
+            path = Path(chunk_path)
+            if not path.exists():
+                adjusted_paths.append(chunk_path)
+                continue
+            if index >= len(chunk_paths) - 1:
+                adjusted_paths.append(chunk_path)
+                continue
+            text = chunk_texts[index] if index < len(chunk_texts) else ""
+            pause_ms = self._pause_ms_for_text(text)
+            try:
+                audio, sample_rate = sf.read(str(path))
+                if pause_ms <= 0:
+                    adjusted_paths.append(chunk_path)
+                    continue
+                silence_frames = max(1, int(sample_rate * (pause_ms / 1000.0)))
+                if getattr(audio, "ndim", 1) == 1:
+                    silence = np.zeros((silence_frames,), dtype=audio.dtype)
+                else:
+                    silence = np.zeros((silence_frames, audio.shape[1]), dtype=audio.dtype)
+                combined = np.concatenate([audio, silence], axis=0)
+                paused_path = path.with_name(f"{path.stem}-paused{path.suffix}")
+                sf.write(str(paused_path), combined, sample_rate)
+                adjusted_paths.append(str(paused_path))
+            except Exception:
+                adjusted_paths.append(chunk_path)
+        return adjusted_paths
+
+    def _pause_ms_for_text(self, text: str) -> int:
+        trimmed = (text or "").strip()
+        if not trimmed:
+            return int(self.settings.synthesis_pause_default_ms)
+        if trimmed.endswith((".", "?", "!")):
+            return int(self.settings.synthesis_pause_sentence_ms)
+        if trimmed.endswith((",", ";", ":")):
+            return int(self.settings.synthesis_pause_clause_ms)
+        return int(self.settings.synthesis_pause_default_ms)

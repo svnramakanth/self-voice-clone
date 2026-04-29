@@ -30,6 +30,8 @@ def submit_synthesis(
         background_tasks.add_task(run_synthesis_job_background, job.id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - convert unexpected synthesis create failures into JSON 500s for the UI.
+        raise HTTPException(status_code=500, detail=f"Failed to create synthesis job: {exc}") from exc
     return SynthesisJobResponse(
         job_id=job.id,
         status=job.status.upper(),
@@ -43,6 +45,8 @@ def get_preview(job_id: str, db: Session = Depends(get_db_session)) -> Synthesis
         return SynthesisPreviewResponse(**SynthesisService(db).get_preview(job_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - preview/status should always return a JSON error if something unexpected happens.
+        raise HTTPException(status_code=500, detail=f"Failed to read synthesis preview: {exc}") from exc
 
 
 @router.post("/{job_id}/cancel", response_model=SynthesisJobResponse)
@@ -64,6 +68,8 @@ def create_download_url(job_id: str, db: Session = Depends(get_db_session)) -> D
         return DownloadUrlResponse(**SynthesisService(db).get_download_url(job_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Failed to create download URL: {exc}") from exc
 
 
 @router.get("/{job_id}/file")

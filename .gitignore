@@ -36,3 +36,5 @@ temp/
 
 vclone/Swami-voice.wav
 vclone/Swami-srt.srt
+vclone/generated-audio
+vclone/training-data

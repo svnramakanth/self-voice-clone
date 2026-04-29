@@ -20,6 +20,9 @@ class SpeakerVerificationReport:
 
 
 class SpeakerVerificationService:
+    _classifier_cache: dict[str, Any] = {}
+    _speechbrain_unavailable_reason: str | None = None
+
     def __init__(self, threshold: float = 0.72) -> None:
         self.threshold = threshold
 
@@ -42,7 +45,12 @@ class SpeakerVerificationService:
             )
 
         try:
-            classifier = EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb")
+            classifier = self.__class__._classifier_cache.get("speechbrain_ecapa")
+            if classifier is None:
+                if self.__class__._speechbrain_unavailable_reason:
+                    raise RuntimeError(self.__class__._speechbrain_unavailable_reason)
+                classifier = EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb")
+                self.__class__._classifier_cache["speechbrain_ecapa"] = classifier
             ref_embedding = classifier.encode_batch(self._load_audio_tensor(reference_audio_path, classifier))
             cand_embedding = classifier.encode_batch(self._load_audio_tensor(candidate_audio_path, classifier))
             similarity = torch.nn.functional.cosine_similarity(ref_embedding.squeeze(1), cand_embedding.squeeze(1)).mean().item()
@@ -54,13 +62,15 @@ class SpeakerVerificationService:
                 notes=["Real speaker embedding verification completed with SpeechBrain ECAPA."],
             )
         except Exception as exc:
+            if "huggingface.co" in str(exc) or "NameResolutionError" in str(exc) or "MaxRetryError" in str(exc):
+                self.__class__._speechbrain_unavailable_reason = f"speechbrain offline/unavailable: {exc}"
             similarity = self._duration_similarity(reference_audio_path, candidate_audio_path)
             return SpeakerVerificationReport(
                 provider="fallback",
                 similarity_score=round(similarity, 3),
                 passed=similarity >= self.threshold,
                 threshold=self.threshold,
-                notes=[f"SpeechBrain verification failed: {exc}", "Falling back to non-embedding similarity heuristic."],
+                notes=[f"SpeechBrain verification failed: {exc}", "Falling back to non-embedding similarity heuristic without retrying remote model download."],
             )
 
     def _load_audio_tensor(self, audio_path: str, classifier: Any):

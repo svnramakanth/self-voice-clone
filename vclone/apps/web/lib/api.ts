@@ -75,6 +75,13 @@ export type SynthesisDownloadResponse = {
   evaluation: Record<string, unknown>;
   asr_backcheck: Record<string, unknown>;
   clone_profile: Record<string, unknown>;
+  candidate_plan: Record<string, unknown>[];
+  qualified_candidates: Record<string, unknown>[];
+  smoke_test_failures: Record<string, unknown>[];
+  candidate_selections: Record<string, unknown>[];
+  failed_chunks: Record<string, unknown>[];
+  partial_output: boolean;
+  progress_manifest_path?: string | null;
   engine_selection: Record<string, unknown>;
   engine_registry: Record<string, unknown>;
 };
@@ -87,8 +94,14 @@ export type SystemCapabilitiesResponse = {
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const error = (await response.json().catch(() => null)) as ApiError | null;
-    throw new Error(error?.detail ?? error?.message ?? `${response.status} ${response.statusText || "Request failed"}`);
+    let detail: string | null = null;
+    try {
+      const error = (await response.json()) as ApiError | null;
+      detail = error?.detail ?? error?.message ?? null;
+    } catch {
+      detail = (await response.text().catch(() => "")).trim() || null;
+    }
+    throw new Error(detail ?? `${response.status} ${response.statusText || "Request failed"}`);
   }
   return response.json() as Promise<T>;
 }

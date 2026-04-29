@@ -1,0 +1,693 @@
+{
+  "wav_path": "/Users/ramakanth/pers/self-voice-clone/vclone/training-data/TG-2/TG.wav",
+  "srt_path": "/Users/ramakanth/pers/self-voice-clone/vclone/training-data/TG-2/TG.srt",
+  "raw_audio_duration_seconds": 1484.733,
+  "srt_entry_count": 106,
+  "srt_covered_seconds": 1167.972,
+  "duration_buckets": {
+    "8_20s": 90,
+    "5_8s": 14,
+    "20_30s": 1,
+    "2_5s": 1
+  },
+  "accepted_prompt_candidate_count": 105,
+  "rejected_prompt_candidate_count": 1,
+  "accepted_prompt_candidate_seconds": 1163.456,
+  "top_rejection_reasons": [
+    {
+      "reason": "too_short_for_golden_ref",
+      "count": 1
+    }
+  ],
+  "accepted_examples": [
+    {
+      "index": 1,
+      "start_ms": 0,
+      "end_ms": 9166,
+      "duration_ms": 9166,
+      "text": "The Bhagavadg\u012bt\u0101 told by K\u1e5b\u1e63\u1e47a to Arjuna was not named by K\u1e5b\u1e63\u1e47a Himself.",
+      "duration_seconds": 9.166,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 2,
+      "start_ms": 9166,
+      "end_ms": 16566,
+      "duration_ms": 7400,
+      "text": "This name was given by Sage Vy\u0101sa, who was the devotee of God.",
+      "duration_seconds": 7.4,
+      "duration_bucket": "5_8s"
+    },
+    {
+      "index": 3,
+      "start_ms": 16566,
+      "end_ms": 28566,
+      "duration_ms": 12000,
+      "text": "Devotee always likes the fame of God and not the fame of the devotee.",
+      "duration_seconds": 12.0,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 4,
+      "start_ms": 44733,
+      "end_ms": 54283,
+      "duration_ms": 9550,
+      "text": "In the same way, God likes the fame of the devotee and not His fame.",
+      "duration_seconds": 9.55,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 5,
+      "start_ms": 54283,
+      "end_ms": 66767,
+      "duration_ms": 12484,
+      "text": "God told in the Bhagavadg\u012bt\u0101 that He will be just a reflection of the devotee (Ye yath\u0101 m\u0101m\u2026).",
+      "duration_seconds": 12.484,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 6,
+      "start_ms": 66766,
+      "end_ms": 72648,
+      "duration_ms": 5882,
+      "text": "Hence, this G\u012bt\u0101 is named in your name.",
+      "duration_seconds": 5.882,
+      "duration_bucket": "5_8s"
+    },
+    {
+      "index": 7,
+      "start_ms": 72650,
+      "end_ms": 88133,
+      "duration_ms": 15483,
+      "text": "Like this, I have spoken the G\u012bt\u0101 in the name of some devotees like Lak\u1e63ma\u1e47ag\u012bt\u0101 and Rohitag\u012bt\u0101.",
+      "duration_seconds": 15.483,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 8,
+      "start_ms": 106366,
+      "end_ms": 118682,
+      "duration_ms": 12316,
+      "text": "If God K\u1e5b\u1e63\u1e47a wanted to name the G\u012bt\u0101 sung by Him, He should have named it as Arjunag\u012bt\u0101.",
+      "duration_seconds": 12.316,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 9,
+      "start_ms": 118683,
+      "end_ms": 127367,
+      "duration_ms": 8684,
+      "text": "God comes down to the earth as incarnation descending from His abode",
+      "duration_seconds": 8.684,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 10,
+      "start_ms": 127366,
+      "end_ms": 138799,
+      "duration_ms": 11433,
+      "text": "bored with continuous prayers of His praise with repulsion to fame.",
+      "duration_seconds": 11.433,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 11,
+      "start_ms": 154966,
+      "end_ms": 165648,
+      "duration_ms": 10682,
+      "text": "Once God Vi\u1e63\u1e47u was also bored by praises and wanted to come down to earth as incarnation",
+      "duration_seconds": 10.682,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 12,
+      "start_ms": 165650,
+      "end_ms": 175600,
+      "duration_ms": 9950,
+      "text": "and requested all His devotees to come to earth along with Him and become enemies through scolding Him.",
+      "duration_seconds": 9.95,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 13,
+      "start_ms": 175600,
+      "end_ms": 188567,
+      "duration_ms": 12967,
+      "text": "He gave two options: - 1) To reach Him as devotee in 7 births or 2) To reach Him in 3 births as enemies.",
+      "duration_seconds": 12.967,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 14,
+      "start_ms": 188600,
+      "end_ms": 204933,
+      "duration_ms": 16333,
+      "text": "But, no devotee agreed to this. Finally, His gatekeepers Jaya and Vijaya agreed selecting the 2nd option.",
+      "duration_seconds": 16.333,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 15,
+      "start_ms": 222083,
+      "end_ms": 235650,
+      "duration_ms": 13567,
+      "text": "In the last 3rd birth, \u015ai\u015bup\u0101la pleased the Lord very much by scolding Him continuously like strong rain",
+      "duration_seconds": 13.567,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 16,
+      "start_ms": 235650,
+      "end_ms": 244767,
+      "duration_ms": 9117,
+      "text": "and the soul of \u015ai\u015bup\u0101la as a light merged in the heart of God.",
+      "duration_seconds": 9.117,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 17,
+      "start_ms": 244766,
+      "end_ms": 265649,
+      "duration_ms": 20883,
+      "text": "In the Bhagavadg\u012bt\u0101, it is told that a person, who equally enjoys both happiness and misery is called Yog\u012b (samatva\u1e43 yoga ucyate\u2026).",
+      "duration_seconds": 20.883,
+      "duration_bucket": "20_30s"
+    },
+    {
+      "index": 18,
+      "start_ms": 282400,
+      "end_ms": 291533,
+      "duration_ms": 9133,
+      "text": "Just like a person enjoys equally both hot and sweet dishes in meals,",
+      "duration_seconds": 9.133,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 19,
+      "start_ms": 291533,
+      "end_ms": 303200,
+      "duration_ms": 11667,
+      "text": "just like a person enjoys both pleasant and tragic scenes in seeing a cinema",
+      "duration_seconds": 11.667,
+      "duration_bucket": "8_20s"
+    },
+    {
+      "index": 20,
+      "start_ms": 303200,
+      "end_ms": 317082,
+      "duration_ms": 13882,
+      "text": "and just like I on entering this world as incarnation enjoy equally both happiness and misery,",
+      "duration_seconds": 13.882,
+      "duration_bucket": "8_20s"
+    }
+  ],
+  "rejected_examples": [
+    {
+      "index": 103,
+      "start_ms": 1449566,
+      "end_ms": 1454082,
+      "duration_ms": 4516,
+      "text": "Sometimes, even devilish people also do miracles by attaining the miraculous powers from God through rigid penance.",
+      "duration_seconds": 4.516,
+      "duration_bucket": "2_5s",
+      "reason": "too_short_for_golden_ref"
+    }
+  ],
+  "actual_curation": {
+    "accepted_segment_count": 106,
+    "rejected_segment_count": 0,
+    "selected_duration_seconds": 966.76,
+    "coverage_percent": 78.67,
+    "warnings": [],
+    "selected_segments_preview": [
+      {
+        "index": 1,
+        "start_ms": 0,
+        "end_ms": 9166,
+        "duration_ms": 9166,
+        "text": "The Bhagavadg\u012bt\u0101 told by K\u1e5b\u1e63\u1e47a to Arjuna was not named by K\u1e5b\u1e63\u1e47a Himself.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 0.523,
+          "detected_end_seconds": 7.529,
+          "detected_duration_seconds": 7.005,
+          "trimmed_leading_silence_ms": 523,
+          "trimmed_trailing_silence_ms": 1737,
+          "speech_coverage_percent": 66.44,
+          "notes": [
+            "Trimmed 1737 ms of trailing silence/subtitle display time.",
+            "Trimmed 523 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0001.wav"
+      },
+      {
+        "index": 2,
+        "start_ms": 9166,
+        "end_ms": 16566,
+        "duration_ms": 7400,
+        "text": "This name was given by Sage Vy\u0101sa, who was the devotee of God.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 9.714,
+          "detected_end_seconds": 15.113,
+          "detected_duration_seconds": 5.399,
+          "trimmed_leading_silence_ms": 698,
+          "trimmed_trailing_silence_ms": 1553,
+          "speech_coverage_percent": 58.6,
+          "notes": [
+            "Trimmed 1553 ms of trailing silence/subtitle display time.",
+            "Trimmed 698 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0002.wav"
+      },
+      {
+        "index": 3,
+        "start_ms": 16566,
+        "end_ms": 28566,
+        "duration_ms": 12000,
+        "text": "Devotee always likes the fame of God and not the fame of the devotee.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 17.268,
+          "detected_end_seconds": 24.976,
+          "detected_duration_seconds": 7.708,
+          "trimmed_leading_silence_ms": 852,
+          "trimmed_trailing_silence_ms": 3690,
+          "speech_coverage_percent": 46.73,
+          "notes": [
+            "Trimmed 3690 ms of trailing silence/subtitle display time.",
+            "Trimmed 852 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0003.wav"
+      },
+      {
+        "index": 4,
+        "start_ms": 44733,
+        "end_ms": 54283,
+        "duration_ms": 9550,
+        "text": "In the same way, God likes the fame of the devotee and not His fame.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 45.604,
+          "detected_end_seconds": 52.435,
+          "detected_duration_seconds": 6.831,
+          "trimmed_leading_silence_ms": 1021,
+          "trimmed_trailing_silence_ms": 1948,
+          "speech_coverage_percent": 50.48,
+          "notes": [
+            "Trimmed 1948 ms of trailing silence/subtitle display time.",
+            "Trimmed 1021 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0004.wav"
+      },
+      {
+        "index": 5,
+        "start_ms": 54283,
+        "end_ms": 66767,
+        "duration_ms": 12484,
+        "text": "God told in the Bhagavadg\u012bt\u0101 that He will be just a reflection of the devotee (Ye yath\u0101 m\u0101m\u2026).",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 54.39,
+          "detected_end_seconds": 65.119,
+          "detected_duration_seconds": 10.729,
+          "trimmed_leading_silence_ms": 257,
+          "trimmed_trailing_silence_ms": 1748,
+          "speech_coverage_percent": 55.41,
+          "notes": [
+            "Trimmed 1748 ms of trailing silence/subtitle display time."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0005.wav"
+      },
+      {
+        "index": 6,
+        "start_ms": 66766,
+        "end_ms": 72648,
+        "duration_ms": 5882,
+        "text": "Hence, this G\u012bt\u0101 is named in your name.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 67.025,
+          "detected_end_seconds": 71.241,
+          "detected_duration_seconds": 4.215,
+          "trimmed_leading_silence_ms": 409,
+          "trimmed_trailing_silence_ms": 1507,
+          "speech_coverage_percent": 54.47,
+          "notes": [
+            "Trimmed 1507 ms of trailing silence/subtitle display time.",
+            "Trimmed 409 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0006.wav"
+      },
+      {
+        "index": 7,
+        "start_ms": 72650,
+        "end_ms": 88133,
+        "duration_ms": 15483,
+        "text": "Like this, I have spoken the G\u012bt\u0101 in the name of some devotees like Lak\u1e63ma\u1e47ag\u012bt\u0101 and Rohitag\u012bt\u0101.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 73.147,
+          "detected_end_seconds": 83.95,
+          "detected_duration_seconds": 10.803,
+          "trimmed_leading_silence_ms": 647,
+          "trimmed_trailing_silence_ms": 4283,
+          "speech_coverage_percent": 43.2,
+          "notes": [
+            "Trimmed 4283 ms of trailing silence/subtitle display time.",
+            "Trimmed 647 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0007.wav"
+      },
+      {
+        "index": 8,
+        "start_ms": 106366,
+        "end_ms": 118682,
+        "duration_ms": 12316,
+        "text": "If God K\u1e5b\u1e63\u1e47a wanted to name the G\u012bt\u0101 sung by Him, He should have named it as Arjunag\u012bt\u0101.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 106.668,
+          "detected_end_seconds": 116.425,
+          "detected_duration_seconds": 9.757,
+          "trimmed_leading_silence_ms": 452,
+          "trimmed_trailing_silence_ms": 2357,
+          "speech_coverage_percent": 58.45,
+          "notes": [
+            "Trimmed 2357 ms of trailing silence/subtitle display time.",
+            "Trimmed 452 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0008.wav"
+      },
+      {
+        "index": 9,
+        "start_ms": 118683,
+        "end_ms": 127367,
+        "duration_ms": 8684,
+        "text": "God comes down to the earth as incarnation descending from His abode",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 118.847,
+          "detected_end_seconds": 126.377,
+          "detected_duration_seconds": 7.53,
+          "trimmed_leading_silence_ms": 314,
+          "trimmed_trailing_silence_ms": 1090,
+          "speech_coverage_percent": 60.98,
+          "notes": [
+            "Trimmed 1090 ms of trailing silence/subtitle display time.",
+            "Trimmed 314 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0009.wav"
+      },
+      {
+        "index": 10,
+        "start_ms": 127366,
+        "end_ms": 138799,
+        "duration_ms": 11433,
+        "text": "bored with continuous prayers of His praise with repulsion to fame.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 127.677,
+          "detected_end_seconds": 134.998,
+          "detected_duration_seconds": 7.321,
+          "trimmed_leading_silence_ms": 461,
+          "trimmed_trailing_silence_ms": 3901,
+          "speech_coverage_percent": 48.74,
+          "notes": [
+            "Trimmed 3901 ms of trailing silence/subtitle display time.",
+            "Trimmed 461 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0010.wav"
+      },
+      {
+        "index": 11,
+        "start_ms": 154966,
+        "end_ms": 165648,
+        "duration_ms": 10682,
+        "text": "Once God Vi\u1e63\u1e47u was also bored by praises and wanted to come down to earth as incarnation",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 155.702,
+          "detected_end_seconds": 164.636,
+          "detected_duration_seconds": 8.934,
+          "trimmed_leading_silence_ms": 886,
+          "trimmed_trailing_silence_ms": 1112,
+          "speech_coverage_percent": 65.34,
+          "notes": [
+            "Trimmed 1112 ms of trailing silence/subtitle display time.",
+            "Trimmed 886 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0011.wav"
+      },
+      {
+        "index": 12,
+        "start_ms": 165650,
+        "end_ms": 175600,
+        "duration_ms": 9950,
+        "text": "and requested all His devotees to come to earth along with Him and become enemies through scolding Him.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 165.828,
+          "detected_end_seconds": 173.788,
+          "detected_duration_seconds": 7.96,
+          "trimmed_leading_silence_ms": 328,
+          "trimmed_trailing_silence_ms": 1912,
+          "speech_coverage_percent": 67.12,
+          "notes": [
+            "Trimmed 1912 ms of trailing silence/subtitle display time.",
+            "Trimmed 328 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0012.wav"
+      },
+      {
+        "index": 13,
+        "start_ms": 175600,
+        "end_ms": 188567,
+        "duration_ms": 12967,
+        "text": "He gave two options: - 1) To reach Him as devotee in 7 births or 2) To reach Him in 3 births as enemies.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 176.314,
+          "detected_end_seconds": 186.703,
+          "detected_duration_seconds": 10.389,
+          "trimmed_leading_silence_ms": 864,
+          "trimmed_trailing_silence_ms": 1964,
+          "speech_coverage_percent": 56.07,
+          "notes": [
+            "Trimmed 1964 ms of trailing silence/subtitle display time.",
+            "Trimmed 864 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0013.wav"
+      },
+      {
+        "index": 14,
+        "start_ms": 188600,
+        "end_ms": 204933,
+        "duration_ms": 16333,
+        "text": "But, no devotee agreed to this. Finally, His gatekeepers Jaya and Vijaya agreed selecting the 2nd option.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 188.807,
+          "detected_end_seconds": 202.119,
+          "detected_duration_seconds": 13.312,
+          "trimmed_leading_silence_ms": 357,
+          "trimmed_trailing_silence_ms": 2914,
+          "speech_coverage_percent": 52.5,
+          "notes": [
+            "Trimmed 2914 ms of trailing silence/subtitle display time.",
+            "Trimmed 357 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0014.wav"
+      },
+      {
+        "index": 15,
+        "start_ms": 222083,
+        "end_ms": 235650,
+        "duration_ms": 13567,
+        "text": "In the last 3rd birth, \u015ai\u015bup\u0101la pleased the Lord very much by scolding Him continuously like strong rain",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 221.933,
+          "detected_end_seconds": 234.805,
+          "detected_duration_seconds": 12.872,
+          "trimmed_leading_silence_ms": 0,
+          "trimmed_trailing_silence_ms": 945,
+          "speech_coverage_percent": 63.37,
+          "notes": [
+            "Trimmed 945 ms of trailing silence/subtitle display time."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0015.wav"
+      },
+      {
+        "index": 16,
+        "start_ms": 235650,
+        "end_ms": 244767,
+        "duration_ms": 9117,
+        "text": "and the soul of \u015ai\u015bup\u0101la as a light merged in the heart of God.",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 236.025,
+          "detected_end_seconds": 242.932,
+          "detected_duration_seconds": 6.907,
+          "trimmed_leading_silence_ms": 525,
+          "trimmed_trailing_silence_ms": 1935,
+          "speech_coverage_percent": 54.9,
+          "notes": [
+            "Trimmed 1935 ms of trailing silence/subtitle display time.",
+            "Trimmed 525 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0016.wav"
+      },
+      {
+        "index": 17,
+        "start_ms": 244766,
+        "end_ms": 265649,
+        "duration_ms": 20883,
+        "text": "In the Bhagavadg\u012bt\u0101, it is told that a person, who equally enjoys both happiness and misery is called Yog\u012b (samatva\u1e43 yoga ucyate\u2026).",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 245.569,
+          "detected_end_seconds": 262.376,
+          "detected_duration_seconds": 16.807,
+          "trimmed_leading_silence_ms": 953,
+          "trimmed_trailing_silence_ms": 3373,
+          "speech_coverage_percent": 57.26,
+          "notes": [
+            "Trimmed 3373 ms of trailing silence/subtitle display time.",
+            "Trimmed 953 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0017.wav"
+      },
+      {
+        "index": 18,
+        "start_ms": 282400,
+        "end_ms": 291533,
+        "duration_ms": 9133,
+        "text": "Just like a person enjoys equally both hot and sweet dishes in meals,",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 282.667,
+          "detected_end_seconds": 290.086,
+          "detected_duration_seconds": 7.419,
+          "trimmed_leading_silence_ms": 417,
+          "trimmed_trailing_silence_ms": 1547,
+          "speech_coverage_percent": 60.68,
+          "notes": [
+            "Trimmed 1547 ms of trailing silence/subtitle display time.",
+            "Trimmed 417 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0018.wav"
+      },
+      {
+        "index": 19,
+        "start_ms": 291533,
+        "end_ms": 303200,
+        "duration_ms": 11667,
+        "text": "just like a person enjoys both pleasant and tragic scenes in seeing a cinema",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 291.881,
+          "detected_end_seconds": 301.442,
+          "detected_duration_seconds": 9.561,
+          "trimmed_leading_silence_ms": 498,
+          "trimmed_trailing_silence_ms": 1858,
+          "speech_coverage_percent": 53.56,
+          "notes": [
+            "Trimmed 1858 ms of trailing silence/subtitle display time.",
+            "Trimmed 498 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0019.wav"
+      },
+      {
+        "index": 20,
+        "start_ms": 303200,
+        "end_ms": 317082,
+        "duration_ms": 13882,
+        "text": "and just like I on entering this world as incarnation enjoy equally both happiness and misery,",
+        "speech_analysis": {
+          "accepted": true,
+          "method": "silencedetect",
+          "detected_start_seconds": 303.431,
+          "detected_end_seconds": 315.299,
+          "detected_duration_seconds": 11.868,
+          "trimmed_leading_silence_ms": 381,
+          "trimmed_trailing_silence_ms": 1883,
+          "speech_coverage_percent": 58.38,
+          "notes": [
+            "Trimmed 1883 ms of trailing silence/subtitle display time.",
+            "Trimmed 381 ms of leading silence."
+          ]
+        },
+        "segment_audio_path": "/Users/ramakanth/pers/self-voice-clone/vclone/profiles/TG/diagnostics/curation_artifacts/srt_segments/segment_0020.wav"
+      }
+    ],
+    "rejected_segments_preview": [],
+    "top_rejection_reasons": []
+  },
+  "srt_index_29": {
+    "index": 29,
+    "start_ms": 435883,
+    "end_ms": 444767,
+    "duration_ms": 8884,
+    "text": "The cinema also is relatively real with respect to the spectator."
+  },
+  "index_29_note": "Reject for ultimate/Hi-Fi until smoke test proves no prompt leakage.",
+  "prompt_bank_collapse_detected": false,
+  "srt_warnings": [
+    "Block 6 overlaps previous subtitle.",
+    "Block 10 overlaps previous subtitle.",
+    "Block 17 overlaps previous subtitle.",
+    "Block 30 overlaps previous subtitle.",
+    "Block 33 overlaps previous subtitle.",
+    "Block 38 overlaps previous subtitle.",
+    "Block 44 overlaps previous subtitle.",
+    "Block 51 overlaps previous subtitle.",
+    "Block 53 overlaps previous subtitle.",
+    "Block 58 overlaps previous subtitle.",
+    "Block 61 overlaps previous subtitle.",
+    "Block 67 overlaps previous subtitle.",
+    "Block 69 overlaps previous subtitle.",
+    "Block 83 overlaps previous subtitle.",
+    "Block 93 overlaps previous subtitle.",
+    "Block 95 overlaps previous subtitle.",
+    "Block 102 overlaps previous subtitle."
+  ]
+}

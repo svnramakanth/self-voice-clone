@@ -45,5 +45,12 @@ class DownloadUrlResponse(BaseModel):
     evaluation: dict[str, Any] = Field(default_factory=dict)
     asr_backcheck: dict[str, Any] = Field(default_factory=dict)
     clone_profile: dict[str, Any] = Field(default_factory=dict)
+    candidate_plan: list[dict[str, Any]] = Field(default_factory=list)
+    qualified_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    smoke_test_failures: list[dict[str, Any]] = Field(default_factory=list)
+    candidate_selections: list[dict[str, Any]] = Field(default_factory=list)
+    failed_chunks: list[dict[str, Any]] = Field(default_factory=list)
+    partial_output: bool = False
+    progress_manifest_path: str | None = None
     engine_selection: dict[str, Any] = Field(default_factory=dict)
     engine_registry: dict[str, Any] = Field(default_factory=dict)

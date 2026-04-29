@@ -13,7 +13,7 @@ class ASRBackcheckService:
     def evaluate(self, *, expected_text: str, chunks: list[str], audio_path: str | None = None) -> dict[str, Any]:
         if audio_path:
             transcription = self.transcriber.transcribe(audio_path)
-            if transcription.get("provider") == "faster-whisper":
+            if transcription.get("provider") == "faster-whisper" and bool(transcription.get("is_measured", True)):
                 observed_text = transcription.get("text", "")
                 estimated_wer = self._word_error_rate(expected_text, observed_text)
                 return {
@@ -43,6 +43,7 @@ class ASRBackcheckService:
             "is_measured": False,
             "estimated_wer": estimated_wer,
             "intelligibility_score": intelligibility,
+            "observed_text": normalized_render,
             "dependency_hook": "Replace with Whisper/faster-whisper back-check for real WER.",
             "release_blocker": "Do not treat this heuristic WER as release-grade validation.",
         }

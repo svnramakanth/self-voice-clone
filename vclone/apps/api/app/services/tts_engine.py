@@ -136,6 +136,7 @@ class XTTSv2Engine(BaseTTSEngine):
         language: str | None = None,
         prompt_text: str | None = None,
         voice_profile_report: dict | None = None,
+        clone_mode: str | None = None,
     ) -> dict:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -279,6 +280,7 @@ class XTTSMasteringEngine(XTTSv2Engine):
         language: str | None = None,
         prompt_text: str | None = None,
         voice_profile_report: dict | None = None,
+        clone_mode: str | None = None,
     ) -> dict:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -432,6 +434,7 @@ class PremiumFinalEngine(BaseTTSEngine):
         language: str | None = None,
         prompt_text: str | None = None,
         voice_profile_report: dict | None = None,
+        clone_mode: str | None = None,
     ) -> dict:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)

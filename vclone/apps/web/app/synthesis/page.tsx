@@ -17,7 +17,7 @@ export default function SynthesisPage() {
       const preview = (await getSynthesisPreview(jobId)) as any;
       setJob(preview);
       const status = String(preview.status || "").toLowerCase();
-      if (status === "completed") {
+      if (status === "completed" || status === "completed_partial") {
         return preview;
       }
       if (status === "failed" || status === "cancelled") {
@@ -149,6 +149,11 @@ export default function SynthesisPage() {
           {job?.request?.progress ? (
             <div className="result-box">
               <strong>{job.request.progress.message}</strong>
+              {String(job.status || "").toLowerCase() === "completed_partial" ? (
+                <div className="helper" style={{ marginTop: 8 }}>
+                  Partial output is available. Some chunks timed out or failed; submit the same request again to resume missing chunks if the backend kept the chunk directory.
+                </div>
+              ) : null}
               <div className="muted">Stage: {job.request.progress.stage}</div>
               <div className="muted">Progress: {job.request.progress.percent}%</div>
               <progress value={job.request.progress.percent} max={100} style={{ width: "100%", height: 14 }} />
@@ -174,8 +179,13 @@ export default function SynthesisPage() {
           ) : null}
           {download ? (
             <div className="result-box">
-              <strong>Audio ready</strong>
+              <strong>{download.partial_output ? "Partial audio ready" : "Audio ready"}</strong>
               <div className="muted">{download.asset.format.toUpperCase()} • {download.asset.sample_rate_hz} Hz • {download.asset.channels} channel(s) • {(download.asset.duration_ms / 1000).toFixed(2)}s</div>
+              {download.partial_output ? (
+                <div className="helper" style={{ marginTop: 8 }}>
+                  This is stitched from completed chunks. Failed chunks: {(download.failed_chunks || []).length}. Progress manifest: {download.progress_manifest_path || "not reported"}.
+                </div>
+              ) : null}
               <audio controls src={download.url} style={{ width: "100%", marginTop: 12 }} />
               <div className="actions" style={{ marginTop: 12 }}>
                 <a className="link-arrow" href={download.url} download>Download audio</a>

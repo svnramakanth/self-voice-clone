@@ -8,6 +8,8 @@ from app.core.config import get_settings
 
 
 class AutoTranscriptionService:
+    _model_cache: dict[tuple[str, str, str], object] = {}
+
     def __init__(self) -> None:
         self.settings = get_settings()
         self.ffprobe_path = shutil.which("ffprobe") or "ffprobe"
@@ -40,12 +42,17 @@ class AutoTranscriptionService:
         device = self._resolve_device()
         compute_type = self._resolve_compute_type(device)
         try:
-            model = WhisperModel(self.settings.asr_model_size, device=device, compute_type=compute_type)
+            cache_key = (self.settings.asr_model_size, device, compute_type)
+            model = self.__class__._model_cache.get(cache_key)
+            if model is None:
+                model = WhisperModel(self.settings.asr_model_size, device=device, compute_type=compute_type)
+                self.__class__._model_cache[cache_key] = model
             segments, info = model.transcribe(str(audio_path), beam_size=self.settings.asr_beam_size)
             collected_segments = list(segments)
         except Exception as exc:
             return {
-                "provider": "faster-whisper",
+                "provider": "faster-whisper-fallback",
+                "is_measured": False,
                 "text": self._fallback_text(audio_path),
                 "confidence": 0.25,
                 "segments": self._estimate_segments(audio_path),
@@ -73,6 +80,7 @@ class AutoTranscriptionService:
 
         return {
             "provider": "faster-whisper",
+            "is_measured": True,
             "text": text,
             "confidence": round(confidence, 3),
             "segments": segment_payload,

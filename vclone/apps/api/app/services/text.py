@@ -47,6 +47,46 @@ def chunk_text(text: str, max_chars: int = 220) -> list[str]:
     return chunks
 
 
+def chunk_text_for_clone(text: str, *, mode: str, max_chars: int = 140) -> list[str]:
+    normalized = normalize_text(text)
+    if not normalized:
+        return []
+
+    target_word_limit = 14 if (mode or "preview").lower() == "preview" else 18
+    min_word_limit = 8 if (mode or "preview").lower() == "preview" else 10
+    sentence_candidates = [segment.strip() for segment in re.split(r"(?<=[.!?;:])\s+", normalized) if segment.strip()]
+    chunks: list[str] = []
+    current_words: list[str] = []
+
+    for sentence in sentence_candidates:
+        words = sentence.split()
+        for word in words:
+            candidate_words = current_words + [word]
+            candidate = " ".join(candidate_words)
+            if len(candidate_words) <= target_word_limit and len(candidate) <= max_chars:
+                current_words = candidate_words
+                continue
+
+            if current_words:
+                chunks.append(" ".join(current_words))
+            current_words = [word]
+
+        if current_words and len(current_words) >= min_word_limit:
+            chunks.append(" ".join(current_words))
+            current_words = []
+
+    if current_words:
+        if chunks and len(current_words) < min_word_limit:
+            merged = f"{chunks[-1]} {' '.join(current_words)}".strip()
+            if len(merged) <= max_chars * 1.2:
+                chunks[-1] = merged
+            else:
+                chunks.append(" ".join(current_words))
+        else:
+            chunks.append(" ".join(current_words))
+    return chunks
+
+
 def split_for_regeneration(text: str, max_chars: int = 140) -> list[str]:
     return chunk_text(text, max_chars=max_chars)
 

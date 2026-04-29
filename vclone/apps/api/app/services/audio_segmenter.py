@@ -81,14 +81,13 @@ class AudioSegmenterService:
             if target_seconds is not None and selected_seconds >= target_seconds:
                 warnings.append(f"Stopped SRT analysis after configured target_seconds={target_seconds}.")
                 break
-
             speech_bounds = self._detect_speech_bounds(source, segment, duration_seconds)
             if not speech_bounds["accepted"]:
                 rejected.append({**segment.to_dict(), "reason": speech_bounds["reason"], "speech_analysis": speech_bounds})
                 continue
 
             selected.append({"segment": segment, "speech_analysis": speech_bounds})
-            selected_seconds += speech_bounds["detected_duration_seconds"]
+            selected_seconds += max(0.0, segment.duration_ms / 1000.0)
 
         if not selected:
             warnings.append("No usable SRT segments were selected; falling back to full uploaded audio processing.")
@@ -139,8 +138,9 @@ class AudioSegmenterService:
                 )
             segment = item["segment"]
             speech_analysis = item["speech_analysis"]
-            start = max(0.0, speech_analysis["detected_start_seconds"] - 0.08)
-            end = min(duration_seconds or speech_analysis["detected_end_seconds"], speech_analysis["detected_end_seconds"] + 0.12)
+            start = max(0.0, (segment.start_ms / 1000.0) - 0.08)
+            end = min(duration_seconds or (segment.end_ms / 1000.0), (segment.end_ms / 1000.0) + 0.12)
+            expected_duration = max(0.0, end - start)
             output = work_dir / f"segment_{idx:04d}.wav"
             command = [
                 self.ffmpeg_path,
@@ -152,8 +152,7 @@ class AudioSegmenterService:
                 "-i",
                 str(source),
                 "-af",
-                "silenceremove=start_periods=1:start_silence=0.15:start_threshold=-45dB:"
-                "stop_periods=1:stop_silence=0.25:stop_threshold=-45dB,loudnorm=I=-16:TP=-1.5:LRA=11",
+                "loudnorm=I=-16:TP=-1.5:LRA=11",
                 "-ar",
                 "24000",
                 "-ac",
@@ -161,13 +160,41 @@ class AudioSegmenterService:
                 str(output),
             ]
             try:
-                result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=60)
+                result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=180)
             except subprocess.TimeoutExpired:
                 rejected.append({**segment.to_dict(), "reason": "ffmpeg timed out while extracting segment.", "speech_analysis": speech_analysis})
                 continue
             if result.returncode == 0 and output.exists() and output.stat().st_size > 44:
+                actual_duration = self.duration_seconds(output)
+                duration_ratio = (actual_duration / expected_duration) if expected_duration else None
+                if actual_duration <= 0 or duration_ratio is None or duration_ratio < 0.75 or duration_ratio > 1.25:
+                    rejected.append(
+                        {
+                            **segment.to_dict(),
+                            "reason": "Extracted segment duration did not match SRT window.",
+                            "speech_analysis": speech_analysis,
+                            "segment_audio_path": str(output),
+                            "source_start_sec": start,
+                            "source_end_sec": end,
+                            "expected_duration_sec": expected_duration,
+                            "actual_duration_sec": actual_duration,
+                            "duration_ratio_actual_to_expected": duration_ratio,
+                        }
+                    )
+                    continue
                 segment_files.append(output)
-                extracted_segment_reports.append({**segment.to_dict(), "speech_analysis": speech_analysis, "segment_audio_path": str(output)})
+                extracted_segment_reports.append(
+                    {
+                        **segment.to_dict(),
+                        "speech_analysis": speech_analysis,
+                        "segment_audio_path": str(output),
+                        "source_start_sec": start,
+                        "source_end_sec": end,
+                        "expected_duration_sec": expected_duration,
+                        "actual_duration_sec": actual_duration,
+                        "duration_ratio_actual_to_expected": duration_ratio,
+                    }
+                )
             else:
                 rejected.append({**segment.to_dict(), "reason": "ffmpeg failed to extract segment or extracted silence.", "speech_analysis": speech_analysis})
 
@@ -301,11 +328,11 @@ class AudioSegmenterService:
         if not speech_intervals:
             return {
                 **fallback,
-                "accepted": False,
+                "accepted": True,
                 "method": "silencedetect",
-                "reason": "No non-silent speech detected inside the SRT window.",
+                "reason": None,
                 "speech_coverage_percent": 0.0,
-                "notes": ["SRT window appears to be silence."],
+                "notes": ["No reliable non-silent interval was detected; falling back to padded SRT window instead of rejecting the segment."],
             }
 
         relative_start = min(start for start, _ in speech_intervals)
@@ -319,14 +346,14 @@ class AudioSegmenterService:
         if detected_duration < min_reasonable:
             return {
                 **fallback,
-                "accepted": False,
+                "accepted": True,
                 "method": "silencedetect",
-                "reason": "Detected speech is too short for the subtitle text.",
+                "reason": None,
                 "detected_start_seconds": round(window_start + relative_start, 3),
                 "detected_end_seconds": round(window_start + relative_end, 3),
                 "detected_duration_seconds": round(detected_duration, 3),
                 "speech_coverage_percent": coverage_percent,
-                "notes": ["Rejected after silence trimming because remaining speech is too short."],
+                "notes": ["Detected speech span looked too short after silence trimming; falling back to padded SRT window instead of rejecting the segment."],
             }
 
         trailing_trim_ms = max(0, round((window_duration - relative_end) * 1000))

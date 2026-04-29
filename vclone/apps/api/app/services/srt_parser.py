@@ -108,4 +108,9 @@ class SRTParserService:
     def _clean_text(self, text: str) -> str:
         cleaned = re.sub(r"<[^>]+>", " ", text or "")
         cleaned = re.sub(r"\{[^}]+\}", " ", cleaned)
-        return re.sub(r"\s+", " ", cleaned).strip()
+        cleaned = re.sub(r"^\s*(?:speaker|narrator|host|male|female|voiceover|swami)\s*\d*\s*[:-]+\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^\s*[A-Za-z][A-Za-z' ]{0,30}\s+(?:replies?|reply|says?|said|asks?|asked|speaks?)\s*[:-]+\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^\s*\[[^\]]{0,30}\]\s*", "", cleaned)
+        cleaned = re.sub(r"^\s*\([^\)]{0,30}\)\s*", "", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
