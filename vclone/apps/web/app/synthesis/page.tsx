@@ -259,6 +259,17 @@ export default function SynthesisPage() {
           {job?.request?.progress ? (
             <div className="result-box">
               <strong>{job.request.progress.message}</strong>
+              {job.request.text_preparation?.warnings?.length ? (
+                <div className="helper" style={{ marginTop: 8 }}>
+                  <strong>Text prepared for stable speech</strong>
+                  <ul>
+                    {job.request.text_preparation.warnings.map((warning: string, index: number) => (
+                      <li key={`${warning}-${index}`}>{warning}</li>
+                    ))}
+                  </ul>
+                  {job.request.synthesis_text ? <div className="muted">Synthesis-safe text: {String(job.request.synthesis_text)}</div> : null}
+                </div>
+              ) : null}
               {String(job.status || "").toLowerCase() === "completed_partial" ? (
                 <div className="helper" style={{ marginTop: 8 }}>
                   Partial output is available. Some chunks timed out or failed; submit the same request again to resume missing chunks if the backend kept the chunk directory.

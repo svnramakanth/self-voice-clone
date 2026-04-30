@@ -25,7 +25,7 @@ from app.services.engine_registry import EngineRegistry
 from app.services.mastering import AudioMasteringService
 from app.services.post_synthesis_qc import PostSynthesisQCService
 from app.services.storage import StorageService
-from app.services.text import chunk_text, chunk_text_for_clone, chunk_text_for_clone_plan, normalize_text, split_for_regeneration
+from app.services.text import chunk_text, chunk_text_for_clone, chunk_text_for_clone_plan, normalize_text, prepare_text_for_tts, split_for_regeneration
 from app.services.tts_engine import XTTSInferenceError
 
 
@@ -376,7 +376,8 @@ class SynthesisService:
         if not engine_selection["capabilities"].get("runtime", {}).get("available"):
             reason = engine_selection["capabilities"].get("runtime", {}).get("reason", "Selected clone engine is unavailable.")
             raise ValueError(f"Selected clone engine '{engine.name}' is unavailable. {reason}")
-        normalized = normalize_text(text)
+        prepared_text = prepare_text_for_tts(text)
+        normalized = prepared_text.synthesis_text
         chunk_plan = chunk_text_for_clone_plan(normalized, mode=mode, max_chars=self.settings.synthesis_max_chunk_chars)
         if len(chunk_plan) >= int(self.settings.synthesis_long_text_chunk_threshold):
             chunk_plan = chunk_text_for_clone_plan(normalized, mode=mode, max_chars=int(self.settings.synthesis_long_text_chunk_chars))
@@ -407,6 +408,10 @@ class SynthesisService:
             request_json=json.dumps(
                 {
                     "text": text,
+                    "original_text": prepared_text.original_text,
+                    "normalized_text": prepared_text.normalized_text,
+                    "synthesis_text": prepared_text.synthesis_text,
+                    "text_preparation": prepared_text.to_dict(),
                     "format": delivery_request["format"],
                     "sample_rate_hz": delivery_request["sample_rate_hz"],
                     "channels": delivery_request["channels"],
