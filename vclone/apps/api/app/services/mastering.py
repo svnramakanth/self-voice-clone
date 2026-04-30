@@ -11,6 +11,8 @@ import tempfile
 import wave
 from typing import Any
 
+from app.core.config import get_settings
+
 
 SUPPORTED_DELIVERY_FORMATS = {"wav", "flac"}
 
@@ -33,12 +35,13 @@ class AudioInspection:
 
 
 class AudioMasteringService:
-    def __init__(self, *, target_lufs: float = -16.0, true_peak_db: float = -1.5, target_lra: float = 7.0) -> None:
+    def __init__(self, *, target_lufs: float | None = None, true_peak_db: float | None = None, target_lra: float | None = None) -> None:
+        settings = get_settings()
         self.ffmpeg_path = shutil.which("ffmpeg")
         self.ffprobe_path = shutil.which("ffprobe")
-        self.target_lufs = target_lufs
-        self.true_peak_db = true_peak_db
-        self.target_lra = target_lra
+        self.target_lufs = float(settings.delivery_target_lufs if target_lufs is None else target_lufs)
+        self.true_peak_db = float(settings.delivery_true_peak_db if true_peak_db is None else true_peak_db)
+        self.target_lra = float(settings.delivery_target_lra if target_lra is None else target_lra)
 
     def normalize_delivery_request(self, audio_format: str, sample_rate_hz: int, channels: int) -> dict[str, int | str]:
         normalized_format = (audio_format or "wav").strip().lower()
@@ -488,6 +491,6 @@ class AudioMasteringService:
     def _parse_float(self, value: Any) -> float | None:
         try:
             parsed = float(value)
-            return parsed if parsed >= 0 else None
+            return parsed
         except (TypeError, ValueError):
             return None

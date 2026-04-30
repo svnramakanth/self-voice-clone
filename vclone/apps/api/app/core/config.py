@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     delivery_default_channels: int = 2  # Default requested output channel count.
     delivery_target_lufs: float = -16.0  # Loudness normalization target in LUFS.
     delivery_true_peak_db: float = -1.5  # True-peak ceiling in dBTP.
-    delivery_target_lra: float = 7.0  # Loudness range target used during mastering.
+    delivery_target_lra: float = 9.0  # Slightly gentler loudness-range target to avoid flattening long-form speech dynamics.
 
     primary_tts_engine: str = "voxcpm2"  # Preferred free local engine for best clone quality.
     engine_allow_xtts_fallback: bool = False  # Do not silently fall back to XTTS because it produced poor clone quality.
@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     synthesis_single_chunk_timeout_seconds: int = 900  # Timeout applied to one isolated generated chunk.
     synthesis_resume_existing_chunks: bool = True  # Reuse already-rendered chunk WAVs when retrying a failed/partial job.
     synthesis_allow_partial_output: bool = True  # Master/stitch completed chunks even if later chunks timeout.
+    synthesis_enable_smoke_tests: bool = False  # Keep slow candidate smoke tests out of normal synthesis; run them via diagnostics UI instead.
+    synthesis_smoke_test_candidate_limit: int = 1  # If normal-path smoke tests are explicitly enabled, keep them bounded.
+    synthesis_diagnostic_candidate_limit: int = 3  # Number of prompt candidates tested by the explicit smoke/mock diagnostic UI.
     synthesis_long_text_chunk_threshold: int = 8  # Use long-form settings when text splits into at least this many chunks.
     synthesis_long_text_chunk_chars: int = 240  # Larger chunks reduce CPU VoxCPM orchestration overhead for long text.
     synthesis_long_text_candidate_limit: int = 1  # Long CPU VoxCPM jobs lock one reference candidate to avoid bakeoff blowups.
@@ -73,6 +76,7 @@ class Settings(BaseSettings):
     voice_prompt_min_non_silent_seconds: float = 3.0  # Minimum non-silent speech required in a prompt candidate.
     voice_prompt_duration_tolerance_ratio: float = 0.15  # Reject candidates whose actual duration drifts too far from expected extraction duration.
     voice_dataset_validate_with_asr: bool = True  # Validate curated segments against ASR when possible.
+    voice_dataset_asr_validation_max_segments: int = 24  # Cap blocking per-segment ASR during enrollment; larger SRT jobs defer the rest.
     voice_dataset_max_segment_wer: float = 0.35  # Reject segments whose ASR diverges too much from cleaned transcript.
     voice_dataset_hard_reject_with_asr: bool = False  # ASR on short accented segments can be noisy; score by default rather than hard reject.
     voice_dataset_hard_reject_min_confidence: float = 0.75  # Only hard-reject ASR mismatch when the ASR itself is confident.
@@ -82,9 +86,14 @@ class Settings(BaseSettings):
     synthesis_candidate_max_wer: float = 0.45  # Threshold beyond which a candidate is considered poor text fidelity.
     synthesis_similarity_hard_gate: bool = False  # Speaker embeddings rank candidates, but should not alone fail synthesis.
     synthesis_enable_chatterbox_bakeoff: bool = False  # Keep preview stable; only compare Chatterbox when explicitly enabled.
-    synthesis_pause_sentence_ms: int = 650  # Insert a natural sentence pause between rendered chunks.
-    synthesis_pause_clause_ms: int = 250  # Insert a shorter pause after clause-level boundaries.
-    synthesis_pause_default_ms: int = 150  # Default inter-chunk pause when text gives no better hint.
+    synthesis_pause_paragraph_ms: int = 700  # Longer-but-moderate pause for paragraph boundaries.
+    synthesis_pause_sentence_ms: int = 420  # Natural sentence pause between rendered chunks.
+    synthesis_pause_clause_ms: int = 180  # Shorter pause after clause-level boundaries.
+    synthesis_pause_default_ms: int = 90  # Default inter-chunk pause when text gives no better hint.
+    synthesis_chunk_fade_ms: int = 12  # Tiny edge fades reduce hard cuts at chunk boundaries.
+    synthesis_chunk_crossfade_ms: int = 18  # Small overlap used when clause joins can be blended safely.
+    synthesis_trim_edge_silence_ms: int = 120  # Trim only a small amount of generated edge silence before stitching.
+    synthesis_trim_edge_silence_threshold_dbfs: float = -54.0  # Conservative trim threshold for near-digital-silence edges.
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

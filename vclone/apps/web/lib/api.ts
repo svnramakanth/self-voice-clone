@@ -41,6 +41,11 @@ export type UploadSessionResponse = {
   rejected_segments: number;
   current_segment_index: number;
   total_segments: number;
+  created_at?: string | null;
+  upload_completed_at?: string | null;
+  processing_started_at?: string | null;
+  processing_completed_at?: string | null;
+  processing_elapsed_seconds?: number | null;
   last_updated_at?: string | null;
   error?: string | null;
   voice_profile_id?: string | null;
@@ -56,6 +61,22 @@ export type SynthesisJobResponse = {
   job_id: string;
   status: string;
   message?: string | null;
+};
+
+export type SmokeTestJobResponse = {
+  job_id: string;
+  status: string;
+  message?: string | null;
+};
+
+export type SmokeTestStatusResponse = {
+  job_id: string;
+  status: string;
+  progress: Record<string, unknown>;
+  results: Record<string, unknown>[];
+  error?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type SynthesizedAssetInfo = {
@@ -82,6 +103,9 @@ export type SynthesisDownloadResponse = {
   failed_chunks: Record<string, unknown>[];
   partial_output: boolean;
   progress_manifest_path?: string | null;
+  synthesis_started_at?: string | null;
+  synthesis_completed_at?: string | null;
+  synthesis_elapsed_seconds?: number | null;
   engine_selection: Record<string, unknown>;
   engine_registry: Record<string, unknown>;
 };
@@ -344,6 +368,38 @@ export async function getSynthesisDownloadUrl(jobId: string): Promise<SynthesisD
     payload.url = `${API_BASE}/synthesis/${jobId}/file`;
   }
   return payload;
+}
+
+export async function startSmokeTest(payload: {
+  voice_profile_id: string;
+  mode?: string;
+  engine_name?: string;
+  candidate_limit?: number;
+}): Promise<SmokeTestJobResponse> {
+  const response = await apiFetch(`${API_BASE}/synthesis/smoke-test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<SmokeTestJobResponse>(response);
+}
+
+export async function getSmokeTestStatus(jobId: string): Promise<SmokeTestStatusResponse> {
+  const response = await apiFetch(`${API_BASE}/synthesis/smoke-test/${jobId}`, { cache: "no-store" });
+  const payload = await readJson<SmokeTestStatusResponse>(response);
+  payload.results = (payload.results || []).map((item) => {
+    const audioUrl = typeof item.audio_url === "string" ? item.audio_url : null;
+    return {
+      ...item,
+      audio_url: audioUrl?.startsWith("http") ? audioUrl : audioUrl ? `${API_BASE.replace(/\/v1$/, "")}${audioUrl}` : audioUrl,
+    };
+  });
+  return payload;
+}
+
+export async function cancelSmokeTest(jobId: string): Promise<SmokeTestStatusResponse> {
+  const response = await apiFetch(`${API_BASE}/synthesis/smoke-test/${jobId}/cancel`, { method: "POST" });
+  return readJson<SmokeTestStatusResponse>(response);
 }
 
 export async function getSystemCapabilities(): Promise<SystemCapabilitiesResponse> {

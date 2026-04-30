@@ -28,6 +28,11 @@ class UploadSessionResponse(BaseModel):
     rejected_segments: int = 0
     current_segment_index: int = 0
     total_segments: int = 0
+    created_at: str | None = None
+    upload_completed_at: str | None = None
+    processing_started_at: str | None = None
+    processing_completed_at: str | None = None
+    processing_elapsed_seconds: float | None = None
     last_updated_at: str | None = None
     error: str | None = None
     voice_profile_id: str | None = None

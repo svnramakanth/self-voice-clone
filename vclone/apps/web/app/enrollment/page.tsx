@@ -29,6 +29,14 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function formatDuration(seconds?: number | null): string {
+  if (seconds == null || Number.isNaN(seconds)) return "not available";
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return `${minutes}m ${remainder}s`;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -87,6 +95,7 @@ export default function EnrollmentPage() {
         `Upload ID: ${session.upload_id} | Stage: ${stage} | Attempt: ${session.processing_attempt || 1}` +
           (session.total_segments ? ` | Segment ${session.current_segment_index}/${session.total_segments}` : "") +
           ` | Accepted: ${session.accepted_segments || 0}, Rejected: ${session.rejected_segments || 0}` +
+          (session.processing_elapsed_seconds != null ? ` | Processing time: ${formatDuration(session.processing_elapsed_seconds)}` : "") +
           (session.last_updated_at ? ` | Updated: ${session.last_updated_at}` : "") +
           (session.voice_profile_id ? ` | Voice profile: ${session.voice_profile_id}` : "")
       );
@@ -112,7 +121,14 @@ export default function EnrollmentPage() {
     try {
       await retryUploadProcessing(cleanUploadId);
       const completed = await pollProcessing(cleanUploadId);
-      setResult({ upload_id: completed.upload_id, status: completed.status, voice_profile_id: completed.voice_profile_id });
+      setResult({
+        upload_id: completed.upload_id,
+        status: completed.status,
+        voice_profile_id: completed.voice_profile_id,
+        processing_elapsed_seconds: completed.processing_elapsed_seconds,
+        processing_started_at: completed.processing_started_at,
+        processing_completed_at: completed.processing_completed_at,
+      });
       setStatusText("Processing complete.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Retry processing failed.");
@@ -195,7 +211,14 @@ export default function EnrollmentPage() {
               setStatusText("Finalizing upload on server...");
               await completeUploadSession(session.upload_id);
               const completed = await pollProcessing(session.upload_id);
-              setResult({ upload_id: completed.upload_id, status: completed.status, voice_profile_id: completed.voice_profile_id });
+              setResult({
+                upload_id: completed.upload_id,
+                status: completed.status,
+                voice_profile_id: completed.voice_profile_id,
+                processing_elapsed_seconds: completed.processing_elapsed_seconds,
+                processing_started_at: completed.processing_started_at,
+                processing_completed_at: completed.processing_completed_at,
+              });
               setStatusText("Enrollment complete.");
             } catch (caught) {
               setError(caught instanceof Error ? caught.message : "Enrollment failed.");
@@ -248,6 +271,9 @@ export default function EnrollmentPage() {
             <div className="muted">Upload progress: {uploadProgress}%</div><progress value={uploadProgress} max={100} style={{ width: "100%", height: 18 }} />
             <div className="muted">Current chunk progress: {chunkProgress}%</div><progress value={chunkProgress} max={100} style={{ width: "100%", height: 12 }} />
             <div className="muted">Processing progress: {processingProgress}%</div><progress value={processingProgress} max={100} style={{ width: "100%", height: 12 }} />
+            {result?.status === "completed" && result?.processing_elapsed_seconds != null ? (
+              <div className="muted">Voice enrollment processing time: {formatDuration(result.processing_elapsed_seconds)}</div>
+            ) : null}
           </div>
         ) : null}
         {error ? <div className="result-box"><pre>{error}</pre></div> : null}

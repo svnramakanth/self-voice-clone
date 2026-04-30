@@ -56,6 +56,11 @@ class ResumableUploadService:
             "rejected_segments": 0,
             "current_segment_index": 0,
             "total_segments": 0,
+            "created_at": self._now(),
+            "upload_completed_at": None,
+            "processing_started_at": None,
+            "processing_completed_at": None,
+            "processing_elapsed_seconds": None,
             "last_updated_at": self._now(),
         }
         self._write_metadata(upload_id, metadata)
@@ -167,6 +172,7 @@ class ResumableUploadService:
         metadata["stage"] = "queued_processing"
         metadata["processing_percent"] = 5
         metadata["processing_message"] = "Upload assembled. Waiting for background processing."
+        metadata["upload_completed_at"] = self._now()
         metadata["last_updated_at"] = self._now()
         self._write_metadata(upload_id, metadata)
         return self.get_session(upload_id)
@@ -200,6 +206,9 @@ class ResumableUploadService:
         metadata["rejected_segments"] = 0
         metadata["current_segment_index"] = 0
         metadata["total_segments"] = 0
+        metadata["processing_started_at"] = None
+        metadata["processing_completed_at"] = None
+        metadata["processing_elapsed_seconds"] = None
         metadata["last_updated_at"] = self._now()
         self._write_metadata(upload_id, metadata)
         return self.get_session(upload_id)
@@ -233,6 +242,10 @@ class ResumableUploadService:
             self._cancel_path(upload_id).unlink(missing_ok=True)
             if not metadata.get("processing_attempt"):
                 metadata["processing_attempt"] = 1
+            metadata["processing_started_at"] = self._now()
+            metadata["processing_completed_at"] = None
+            metadata["processing_elapsed_seconds"] = None
+            self._write_metadata(upload_id, metadata)
             self._update_processing(upload_id, stage="creating_voice_profile", percent=10, message="Starting voice profile creation from original upload.")
 
             def progress(update: dict) -> None:
@@ -258,6 +271,8 @@ class ResumableUploadService:
             metadata["processing_message"] = "Voice profile created successfully."
             metadata["voice_profile_id"] = profile.id
             metadata["error"] = None
+            metadata["processing_completed_at"] = self._now()
+            metadata["processing_elapsed_seconds"] = self._elapsed_seconds(metadata.get("processing_started_at"), metadata.get("processing_completed_at"))
             metadata["last_updated_at"] = self._now()
             self._write_metadata(upload_id, metadata)
         except Exception as exc:  # noqa: BLE001 - preserve actual processing failure for UI diagnostics.
@@ -268,6 +283,8 @@ class ResumableUploadService:
             metadata["processing_percent"] = metadata.get("processing_percent", 0) if cancelled else 100
             metadata["processing_message"] = "Processing cancelled by user." if cancelled else "Processing failed."
             metadata["error"] = str(exc)
+            metadata["processing_completed_at"] = self._now()
+            metadata["processing_elapsed_seconds"] = self._elapsed_seconds(metadata.get("processing_started_at"), metadata.get("processing_completed_at"))
             metadata["last_updated_at"] = self._now()
             self._write_metadata(upload_id, metadata)
         finally:
@@ -353,6 +370,20 @@ class ResumableUploadService:
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _elapsed_seconds(self, start: str | None, end: str | None = None) -> float | None:
+        if not start:
+            return None
+        try:
+            start_dt = datetime.fromisoformat(str(start))
+            end_dt = datetime.fromisoformat(str(end)) if end else datetime.now(timezone.utc)
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            return round(max(0.0, (end_dt - start_dt).total_seconds()), 3)
+        except Exception:
+            return None
 
     def _ensure_disk_space(self, size_bytes: int) -> None:
         usage = shutil.disk_usage(self.root_dir)

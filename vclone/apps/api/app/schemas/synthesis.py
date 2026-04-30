@@ -20,12 +20,40 @@ class SynthesisJobResponse(BaseModel):
     message: str | None = None
 
 
+class SmokeTestRequest(BaseModel):
+    voice_profile_id: str
+    mode: str = "preview"
+    engine_name: str = "voxcpm2"
+    candidate_limit: int | None = None
+
+
+class SmokeTestJobResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str | None = None
+
+
+class SmokeTestStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    progress: dict[str, Any] = Field(default_factory=dict)
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    error: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class SynthesisPreviewResponse(BaseModel):
     job_id: str
     status: str
     preview_text: str
     chunks: list[str]
     request: dict[str, Any]
+    created_at: str | None = None
+    updated_at: str | None = None
+    synthesis_started_at: str | None = None
+    synthesis_completed_at: str | None = None
+    synthesis_elapsed_seconds: float | None = None
 
 
 class SynthesizedAssetInfo(BaseModel):
@@ -42,6 +70,7 @@ class DownloadUrlResponse(BaseModel):
     expires_in_seconds: int
     asset: SynthesizedAssetInfo
     delivery_report: dict[str, Any] = Field(default_factory=dict)
+    audio_quality: dict[str, Any] = Field(default_factory=dict)
     evaluation: dict[str, Any] = Field(default_factory=dict)
     asr_backcheck: dict[str, Any] = Field(default_factory=dict)
     clone_profile: dict[str, Any] = Field(default_factory=dict)
@@ -52,5 +81,8 @@ class DownloadUrlResponse(BaseModel):
     failed_chunks: list[dict[str, Any]] = Field(default_factory=list)
     partial_output: bool = False
     progress_manifest_path: str | None = None
+    synthesis_started_at: str | None = None
+    synthesis_completed_at: str | None = None
+    synthesis_elapsed_seconds: float | None = None
     engine_selection: dict[str, Any] = Field(default_factory=dict)
     engine_registry: dict[str, Any] = Field(default_factory=dict)

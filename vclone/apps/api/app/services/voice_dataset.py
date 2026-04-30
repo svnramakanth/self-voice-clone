@@ -82,7 +82,7 @@ class VoiceDatasetBuilder:
 
         curation = curation_report or {}
         selected_segments = list(curation.get("selected_segments") or [])
-        records, rejected = self._records_from_selected_segments(selected_segments)
+        records, rejected = self._records_from_selected_segments(selected_segments, progress_callback=progress_callback)
 
         if not records:
             fallback_record = self._fallback_prompt_record(
@@ -106,13 +106,22 @@ class VoiceDatasetBuilder:
         progress_callback(
             {
                 "stage": "selecting_clone_prompt",
-                "percent": 96,
+                "percent": 98,
                 "message": "Selecting exact prompt audio/text for stable voice cloning.",
                 "accepted_segments": len(records),
                 "rejected_segments": len(rejected),
             }
         )
         prompt = self._build_prompt_artifacts(records=records, prompts_dir=prompts_dir)
+        progress_callback(
+            {
+                "stage": "finalizing_clone_dataset",
+                "percent": 99,
+                "message": "Writing clone dataset manifests and readiness report.",
+                "accepted_segments": len(records),
+                "rejected_segments": len(rejected),
+            }
+        )
         record_seconds = round(sum(record.duration_seconds for record in records), 2)
         total_seconds = round(max(record_seconds, curated_aggregate_seconds), 2)
         train_seconds = round(sum(record.duration_seconds for record in records if record.split == "train"), 2)
@@ -165,10 +174,25 @@ class VoiceDatasetBuilder:
             counts[reason] = counts.get(reason, 0) + 1
         return [{"reason": reason, "count": count} for reason, count in sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:20]]
 
-    def _records_from_selected_segments(self, selected_segments: list[dict[str, Any]]) -> tuple[list[DatasetRecord], list[dict[str, Any]]]:
+    def _records_from_selected_segments(self, selected_segments: list[dict[str, Any]], progress_callback=None) -> tuple[list[DatasetRecord], list[dict[str, Any]]]:
+        progress_callback = progress_callback or (lambda _update: None)
         records: list[DatasetRecord] = []
         rejected: list[dict[str, Any]] = []
-        for item in selected_segments:
+        total_segments = len(selected_segments)
+        asr_validated_segments = 0
+        asr_validation_limit = max(0, int(self.settings.voice_dataset_asr_validation_max_segments or 0))
+        for position, item in enumerate(selected_segments, start=1):
+            progress_callback(
+                {
+                    "stage": "validating_clone_dataset_segments",
+                    "percent": 96 + int((position / max(total_segments, 1)) * 2),
+                    "message": f"Validating clone dataset segment {position}/{total_segments}.",
+                    "current_segment_index": position,
+                    "total_segments": total_segments,
+                    "accepted_segments": len(records),
+                    "rejected_segments": len(rejected),
+                }
+            )
             audio_path = item.get("segment_audio_path") or item.get("audio_path")
             text = self._clean_text(str(item.get("text") or ""))
             if not audio_path:
@@ -214,7 +238,30 @@ class VoiceDatasetBuilder:
             if reason:
                 rejected.append({"index": item.get("index"), "reason": reason, "audio_path": str(path), "duration_seconds": duration, "validation": validation.to_dict()})
                 continue
-            asr_validation = self._segment_asr_validation(path, text)
+            if self.settings.voice_dataset_validate_with_asr and asr_validation_limit and asr_validated_segments >= asr_validation_limit:
+                asr_validation = {
+                    "provider": "deferred_after_enrollment_cap",
+                    "confidence": 0.0,
+                    "wer": None,
+                    "rejected": False,
+                    "observed_text": "",
+                    "reason": f"Per-segment ASR deferred after {asr_validation_limit} enrollment checks to avoid blocking profile creation.",
+                }
+            else:
+                if self.settings.voice_dataset_validate_with_asr:
+                    asr_validated_segments += 1
+                    progress_callback(
+                        {
+                            "stage": "asr_validating_clone_segment",
+                            "percent": 96 + int((position / max(total_segments, 1)) * 2),
+                            "message": f"ASR-validating clone segment {position}/{total_segments} ({asr_validated_segments}/{asr_validation_limit or total_segments}).",
+                            "current_segment_index": position,
+                            "total_segments": total_segments,
+                            "accepted_segments": len(records),
+                            "rejected_segments": len(rejected),
+                        }
+                    )
+                asr_validation = self._segment_asr_validation(path, text)
             if asr_validation.get("rejected"):
                 rejected.append(
                     {

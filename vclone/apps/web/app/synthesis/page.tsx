@@ -1,14 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { cancelSynthesis, getSynthesisDownloadUrl, getSynthesisPreview, getSystemCapabilities, submitSynthesis, listVoiceProfiles } from "../../lib/api";
+import {
+  cancelSmokeTest,
+  cancelSynthesis,
+  getSmokeTestStatus,
+  getSynthesisDownloadUrl,
+  getSynthesisPreview,
+  getSystemCapabilities,
+  listVoiceProfiles,
+  startSmokeTest,
+  submitSynthesis,
+} from "../../lib/api";
 import { SectionCard } from "../../components/SectionCard";
+
+function formatDuration(seconds?: number | null): string {
+  if (seconds == null || Number.isNaN(seconds)) return "not available";
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return `${minutes}m ${remainder}s`;
+}
 
 export default function SynthesisPage() {
   const [job, setJob] = useState<any>(null);
   const [download, setDownload] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [capabilities, setCapabilities] = useState<any>(null);
+  const [smokeTest, setSmokeTest] = useState<any>(null);
+  const [smokeLoading, setSmokeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,6 +44,16 @@ export default function SynthesisPage() {
         const progress = preview.request?.progress;
         throw new Error(progress?.message || "Synthesis failed on the server.");
       }
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
+  }
+
+  async function waitForSmokeTest(jobId: string) {
+    for (;;) {
+      const status = await getSmokeTestStatus(jobId);
+      setSmokeTest(status);
+      const state = String(status.status || "").toLowerCase();
+      if (["completed", "failed", "cancelled"].includes(state)) return status;
       await new Promise((resolve) => window.setTimeout(resolve, 2500));
     }
   }
@@ -49,6 +79,7 @@ export default function SynthesisPage() {
             setJob(null);
             setDownload(null);
             setLoading(true);
+            let activeJobId: string | null = null;
             try {
               const data = new FormData(event.currentTarget);
               const response = await submitSynthesis({
@@ -61,11 +92,15 @@ export default function SynthesisPage() {
                 locale: String(data.get("locale")),
                 require_native_master: data.get("require_native_master") !== null,
               });
+              activeJobId = response.job_id;
               setJob(response);
               await waitForSynthesis(response.job_id);
               const downloadResponse = await getSynthesisDownloadUrl(response.job_id);
               setDownload(downloadResponse);
             } catch (submitError) {
+              if (activeJobId) {
+                await cancelSynthesis(activeJobId).catch(() => null);
+              }
               setError(submitError instanceof Error ? submitError.message : "Generation failed");
             } finally {
               setLoading(false);
@@ -129,6 +164,53 @@ export default function SynthesisPage() {
           <div className="muted">Recommended first test: Preview, WAV, mono, native master unchecked. Use final/master only after the voice actually sounds like you.</div>
           <div className="muted">If a job becomes stale or hangs, use Cancel and retry after restarting the API. Native model crashes now get detected more cleanly.</div>
         </div>
+        <div className="helper" style={{ marginTop: 16 }}>
+          <strong>Voice diagnostics</strong>
+          <div className="muted">Optional: run smoke/mock tests against prompt candidates. This can be slow on CPU and is no longer required before normal synthesis.</div>
+          <div className="actions" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              disabled={smokeLoading || loading}
+              onClick={async () => {
+                const select = document.querySelector<HTMLSelectElement>('select[name="voice_profile_id"]');
+                const voiceProfileId = select?.value || "";
+                if (!voiceProfileId) {
+                  setError("Select a voice profile before running smoke/mock diagnostics.");
+                  return;
+                }
+                setSmokeLoading(true);
+                setSmokeTest(null);
+                setError(null);
+                try {
+                  const created = await startSmokeTest({ voice_profile_id: voiceProfileId, mode: "preview", engine_name: "voxcpm2", candidate_limit: 3 });
+                  setSmokeTest(created);
+                  await waitForSmokeTest(created.job_id);
+                } catch (caught) {
+                  setError(caught instanceof Error ? caught.message : "Smoke/mock test failed.");
+                } finally {
+                  setSmokeLoading(false);
+                }
+              }}
+            >
+              {smokeLoading ? "Running smoke/mock test..." : "Run smoke/mock test"}
+            </button>
+            {smokeTest?.job_id && ["queued", "running", "cancel_requested"].includes(String(smokeTest.status || "").toLowerCase()) ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const cancelled = await cancelSmokeTest(smokeTest.job_id);
+                    setSmokeTest(cancelled);
+                  } catch (caught) {
+                    setError(caught instanceof Error ? caught.message : "Failed to cancel smoke/mock test.");
+                  }
+                }}
+              >
+                Cancel smoke/mock test
+              </button>
+            ) : null}
+          </div>
+        </div>
         {capabilities ? (
           <div className="result-box" style={{ marginTop: 16 }}>
             <strong>System capabilities</strong>
@@ -146,6 +228,34 @@ export default function SynthesisPage() {
             {capabilities?.summary?.clone_pipeline ? <div className="muted">Runtime: {String(capabilities.summary.clone_pipeline)}</div> : null}
           </div>
           {error ? <div className="result-box"><pre>{error}</pre></div> : null}
+          {smokeTest ? (
+            <div className="result-box">
+              <strong>{String(smokeTest.progress?.message || smokeTest.message || "Smoke/mock test")}</strong>
+              <div className="muted">Status: {String(smokeTest.status || "unknown")}</div>
+              {smokeTest.progress ? (
+                <>
+                  <div className="muted">Stage: {String(smokeTest.progress.stage || "unknown")}</div>
+                  <div className="muted">Progress: {Number(smokeTest.progress.percent || 0)}%</div>
+                  <progress value={Number(smokeTest.progress.percent || 0)} max={100} style={{ width: "100%", height: 14 }} />
+                  {smokeTest.progress.total_candidates ? (
+                    <div className="muted">Candidate: {String(smokeTest.progress.current_candidate || 0)}/{String(smokeTest.progress.total_candidates)}</div>
+                  ) : null}
+                </>
+              ) : null}
+              {smokeTest.results?.length ? (
+                <div className="stack" style={{ marginTop: 12 }}>
+                  {smokeTest.results.map((item: any, index: number) => (
+                    <div className="helper" key={`${item.label || "candidate"}-${index}`}>
+                      <strong>{item.passed ? "✓" : "✕"} {String(item.label || `Candidate ${index + 1}`)}</strong>
+                      <div className="muted">Engine: {String(item.engine_name || "unknown")} • Mode: {String(item.clone_mode || "unknown")}</div>
+                      {item.error ? <div className="muted">Error: {String(item.error)}</div> : null}
+                      {item.audio_url ? <audio controls src={String(item.audio_url)} style={{ width: "100%", marginTop: 8 }} /> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {job?.request?.progress ? (
             <div className="result-box">
               <strong>{job.request.progress.message}</strong>
@@ -156,6 +266,9 @@ export default function SynthesisPage() {
               ) : null}
               <div className="muted">Stage: {job.request.progress.stage}</div>
               <div className="muted">Progress: {job.request.progress.percent}%</div>
+              {job.synthesis_elapsed_seconds != null ? (
+                <div className="muted">Synthesis time: {formatDuration(job.synthesis_elapsed_seconds)}</div>
+              ) : null}
               <progress value={job.request.progress.percent} max={100} style={{ width: "100%", height: 14 }} />
               {job.request.progress.total_chunks ? (
                 <div className="muted">Chunk: {job.request.progress.current_chunk}/{job.request.progress.total_chunks}</div>
@@ -181,6 +294,9 @@ export default function SynthesisPage() {
             <div className="result-box">
               <strong>{download.partial_output ? "Partial audio ready" : "Audio ready"}</strong>
               <div className="muted">{download.asset.format.toUpperCase()} • {download.asset.sample_rate_hz} Hz • {download.asset.channels} channel(s) • {(download.asset.duration_ms / 1000).toFixed(2)}s</div>
+              {download.synthesis_elapsed_seconds != null ? (
+                <div className="muted">Synthesis processing time: {formatDuration(download.synthesis_elapsed_seconds)}</div>
+              ) : null}
               {download.partial_output ? (
                 <div className="helper" style={{ marginTop: 8 }}>
                   This is stitched from completed chunks. Failed chunks: {(download.failed_chunks || []).length}. Progress manifest: {download.progress_manifest_path || "not reported"}.

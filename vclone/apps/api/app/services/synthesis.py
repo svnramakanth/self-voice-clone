@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from queue import Empty
 import shutil
+import signal
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from app.db.session import SessionLocal
 from app.models.generated_asset import GeneratedAsset
 from app.models.synthesis_job import SynthesisJob
 from app.models.voice_profile import VoiceProfile
+from app.services.audio_quality import AudioQualityService
 from app.services.audit import AuditService
 from app.services.audio_artifacts import inspect_audio_artifact, validate_voxcpm_reference_audio
 from app.services.asr_backcheck import ASRBackcheckService
@@ -23,7 +25,7 @@ from app.services.engine_registry import EngineRegistry
 from app.services.mastering import AudioMasteringService
 from app.services.post_synthesis_qc import PostSynthesisQCService
 from app.services.storage import StorageService
-from app.services.text import chunk_text, chunk_text_for_clone, normalize_text, split_for_regeneration
+from app.services.text import chunk_text, chunk_text_for_clone, chunk_text_for_clone_plan, normalize_text, split_for_regeneration
 from app.services.tts_engine import XTTSInferenceError
 
 
@@ -334,6 +336,7 @@ class SynthesisService:
         self.storage = StorageService()
         self.engine_registry = EngineRegistry()
         self.mastering = AudioMasteringService()
+        self.audio_quality = AudioQualityService()
         self.post_qc = PostSynthesisQCService()
         self.asr_backcheck = ASRBackcheckService()
         self.evaluation = EvaluationService()
@@ -374,9 +377,11 @@ class SynthesisService:
             reason = engine_selection["capabilities"].get("runtime", {}).get("reason", "Selected clone engine is unavailable.")
             raise ValueError(f"Selected clone engine '{engine.name}' is unavailable. {reason}")
         normalized = normalize_text(text)
-        chunks = chunk_text_for_clone(normalized, mode=mode, max_chars=self.settings.synthesis_max_chunk_chars)
-        if len(chunks) >= int(self.settings.synthesis_long_text_chunk_threshold):
-            chunks = chunk_text_for_clone(normalized, mode=mode, max_chars=int(self.settings.synthesis_long_text_chunk_chars))
+        chunk_plan = chunk_text_for_clone_plan(normalized, mode=mode, max_chars=self.settings.synthesis_max_chunk_chars)
+        if len(chunk_plan) >= int(self.settings.synthesis_long_text_chunk_threshold):
+            chunk_plan = chunk_text_for_clone_plan(normalized, mode=mode, max_chars=int(self.settings.synthesis_long_text_chunk_chars))
+        chunks = [str(item.get("text") or "").strip() for item in chunk_plan if str(item.get("text") or "").strip()]
+        chunk_join_hints = [str(item.get("break_after") or "sentence") for item in chunk_plan if str(item.get("text") or "").strip()]
         if not chunks:
             raise ValueError("Text to synthesize is empty after normalization")
         long_form_synthesis = len(chunks) >= int(self.settings.synthesis_long_text_chunk_threshold)
@@ -391,6 +396,8 @@ class SynthesisService:
         candidate_plan = self._build_candidate_plan(engine.name, profile_report, reference_path, prompt_text, mode)
         if long_form_synthesis and engine.name == "voxcpm2":
             candidate_plan = candidate_plan[: max(1, int(self.settings.synthesis_long_text_candidate_limit))]
+        elif engine.name == "voxcpm2" and not bool(self.settings.synthesis_enable_smoke_tests):
+            candidate_plan = candidate_plan[:1]
 
         job = SynthesisJob(
             user_id=profile.user_id,
@@ -416,7 +423,12 @@ class SynthesisService:
                     "preflight_qc": qc_plan,
                     "regeneration_plan": regeneration_plan,
                     "candidate_plan": candidate_plan,
+                    "chunk_join_hints": chunk_join_hints,
                     "long_form_synthesis": long_form_synthesis,
+                    "queued_at": self._now_iso(),
+                    "synthesis_started_at": None,
+                    "synthesis_completed_at": None,
+                    "synthesis_elapsed_seconds": None,
                     "cancel_requested": False,
                     "last_heartbeat_at": self._now_iso(),
                     "worker_started_at": None,
@@ -472,6 +484,11 @@ class SynthesisService:
             raise ValueError("Voice profile not found")
 
         request = json.loads(job.request_json or "{}")
+        if not request.get("synthesis_started_at"):
+            request["synthesis_started_at"] = self._now_iso()
+        request["synthesis_completed_at"] = None
+        request["synthesis_elapsed_seconds"] = None
+        job.request_json = json.dumps(request)
         profile_report = self._profile_report(profile)
         reference_path, prompt_text = self._resolve_clone_reference(profile, profile_report)
         chunks = json.loads(job.output_text_chunks or "[]")
@@ -497,6 +514,7 @@ class SynthesisService:
         normalized = job.normalized_text
         locale = str(request.get("locale", self.settings.xtts_default_language))
         require_native_master = bool(request.get("require_native_master", False))
+        chunk_join_hints = list(request.get("chunk_join_hints") or [])
 
         output_dir = Path("uploads") / profile.user_id / "generated" / job.id
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -532,7 +550,7 @@ class SynthesisService:
                 voice_profile_report=profile_report,
                 candidate_plan=list(request.get("candidate_plan") or []),
             )
-            chunk_paths = self._apply_inter_chunk_pauses(isolated["chunk_paths"], chunks)
+            chunk_paths = self._apply_inter_chunk_pauses(isolated["chunk_paths"], chunks, chunk_join_hints=chunk_join_hints)
             engine_runs = isolated["engine_runs"]
             candidate_selections = isolated.get("candidate_selections", [])
             qualified_candidates = isolated.get("qualified_candidates", [])
@@ -550,6 +568,18 @@ class SynthesisService:
                 sample_rate_hz=int(delivery_request["sample_rate_hz"]),
                 channels=int(delivery_request["channels"]),
             )
+            source_quality = self.audio_quality.inspect(reference_path, context="source")
+            native_quality = self.audio_quality.inspect(str(native_mix_path), context="generated", target_text=normalized)
+            delivery_quality = self.audio_quality.inspect(str(output_path), context="generated", target_text=normalized)
+            audio_quality_payload = self._audio_quality_payload(
+                source_quality=source_quality,
+                generated_quality=native_quality,
+                delivery_quality=delivery_quality,
+            )
+            if native_quality.is_blocking or delivery_quality.is_blocking:
+                blocking_report = native_quality if native_quality.is_blocking else delivery_quality
+                first_issue = next((issue for issue in blocking_report.issues if issue.blocking), None)
+                raise XTTSInferenceError(first_issue.message if first_issue else "Generated output failed basic audio sanity checks.")
 
             if job.mode == "preview":
                 asr_backcheck = {
@@ -580,22 +610,28 @@ class SynthesisService:
                 evaluation_payload = evaluation_report.to_dict()
         except SynthesisCancelledError as exc:
             job.status = "cancelled"
+            self._mark_job_timing_completed(job)
             self._update_job_progress(job, stage="cancelled", percent=100, message=str(exc))
             self.db.add(job)
             self.db.commit()
             return job
         except XTTSInferenceError as exc:
             job.status = "failed"
+            self._mark_job_timing_completed(job)
             self._update_job_progress(job, stage="failed", percent=100, message=str(exc))
             self.db.add(job)
             self.db.commit()
             return job
         except Exception as exc:
             job.status = "failed"
+            self._mark_job_timing_completed(job)
             self._update_job_progress(job, stage="failed", percent=100, message=f"Synthesis failed: {exc}")
             self.db.add(job)
             self.db.commit()
             return job
+
+        self._mark_job_timing_completed(job)
+        request = json.loads(job.request_json or "{}")
 
         asset = GeneratedAsset(
             synthesis_job_id=job.id,
@@ -623,6 +659,9 @@ class SynthesisService:
                     "failed_chunks": failed_chunks,
                     "partial_output": partial_output,
                     "progress_manifest_path": progress_manifest_path,
+                    "synthesis_started_at": request.get("synthesis_started_at"),
+                    "synthesis_completed_at": request.get("synthesis_completed_at"),
+                    "synthesis_elapsed_seconds": request.get("synthesis_elapsed_seconds"),
                     "clone_profile": {
                         "dataset_status": profile_report.get("clone_dataset", {}).get("status"),
                         "curated_minutes": profile_report.get("clone_dataset", {}).get("curated_minutes"),
@@ -638,6 +677,7 @@ class SynthesisService:
                     },
                     "engine_registry": self.engine_registry.describe(),
                     "delivery_report": delivery_report,
+                    "audio_quality": audio_quality_payload,
                 }
             ),
             checksum_sha256=delivery_report["delivery"]["checksum_sha256"],
@@ -658,15 +698,20 @@ class SynthesisService:
             "failed_chunks": failed_chunks,
             "partial_output": partial_output,
             "progress_manifest_path": progress_manifest_path,
+            "synthesis_started_at": request.get("synthesis_started_at"),
+            "synthesis_completed_at": request.get("synthesis_completed_at"),
+            "synthesis_elapsed_seconds": request.get("synthesis_elapsed_seconds"),
             "chunk_paths": chunk_paths,
             "reference_path": reference_path,
             "prompt_text": prompt_text,
             "output_path": str(output_path),
+            "audio_quality": audio_quality_payload,
         }
         synthesis_manifest_path.write_text(json.dumps(synthesis_manifest, indent=2), encoding="utf-8")
 
         if require_native_master and not delivery_report["spotify"]["native_master_ok"]:
             job.status = "failed"
+            self._mark_job_timing_completed(job)
             self._update_job_progress(job, stage="failed", percent=100, message="Native master was required, but output is derived.")
             self.db.add(job)
             self.db.commit()
@@ -674,6 +719,7 @@ class SynthesisService:
 
         if self._selected_candidate_failed_gate(candidate_selections):
             job.status = "failed_quality_gate"
+            self._mark_job_timing_completed(job)
             self._update_job_progress(job, stage="failed_quality_gate", percent=100, message="Selected candidate failed clone quality gate.")
             self.db.add(job)
             self.db.commit()
@@ -711,6 +757,11 @@ class SynthesisService:
             "preview_text": job.normalized_text,
             "chunks": json.loads(job.output_text_chunks),
             "request": json.loads(job.request_json),
+            "created_at": self._iso_datetime(getattr(job, "created_at", None)),
+            "updated_at": self._iso_datetime(getattr(job, "updated_at", None)),
+            "synthesis_started_at": (json.loads(job.request_json or "{}")).get("synthesis_started_at"),
+            "synthesis_completed_at": (json.loads(job.request_json or "{}")).get("synthesis_completed_at"),
+            "synthesis_elapsed_seconds": (json.loads(job.request_json or "{}")).get("synthesis_elapsed_seconds"),
         }
 
     def cancel_job(self, job_id: str) -> SynthesisJob:
@@ -720,6 +771,9 @@ class SynthesisService:
         request = json.loads(job.request_json or "{}")
         request["cancel_requested"] = True
         request["last_heartbeat_at"] = self._now_iso()
+        worker_pid = int(request.get("worker_pid") or 0)
+        if worker_pid > 0:
+            self._terminate_pid(worker_pid)
         request["progress"] = {
             "stage": "cancel_requested",
             "percent": int((request.get("progress") or {}).get("percent", 0) or 0),
@@ -734,6 +788,27 @@ class SynthesisService:
         self.db.commit()
         self.db.refresh(job)
         return job
+
+    def _terminate_pid(self, pid: int) -> None:
+        if pid <= 0:
+            return
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception:
+            return
+        time.sleep(0.5)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        except Exception:
+            return
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
 
     def get_download_url(self, job_id: str) -> dict:
         asset = self.db.query(GeneratedAsset).filter(GeneratedAsset.synthesis_job_id == job_id).one_or_none()
@@ -752,6 +827,7 @@ class SynthesisService:
                 "checksum_sha256": asset.checksum_sha256,
             },
             "delivery_report": metadata.get("delivery_report", {}),
+            "audio_quality": metadata.get("audio_quality", {}),
             "evaluation": metadata.get("evaluation", {}),
             "asr_backcheck": metadata.get("asr_backcheck", {}),
             "clone_profile": metadata.get("clone_profile", {}),
@@ -762,6 +838,9 @@ class SynthesisService:
             "failed_chunks": metadata.get("failed_chunks", []),
             "partial_output": bool(metadata.get("partial_output", False)),
             "progress_manifest_path": metadata.get("progress_manifest_path"),
+            "synthesis_started_at": metadata.get("synthesis_started_at"),
+            "synthesis_completed_at": metadata.get("synthesis_completed_at"),
+            "synthesis_elapsed_seconds": metadata.get("synthesis_elapsed_seconds"),
             "engine_selection": metadata.get("engine_selection", {}),
             "engine_registry": metadata.get("engine_registry", self.engine_registry.describe()),
         }
@@ -1063,7 +1142,33 @@ class SynthesisService:
                 raise XTTSInferenceError(f"Long-form reference candidate is invalid: {validation.message}")
             smoke_failures: list[dict] = []
             qualified_candidates = [locked_candidate]
+        elif not bool(self.settings.synthesis_enable_smoke_tests):
+            locked_candidate = dict((candidate_plan or [])[0]) if candidate_plan else {
+                "engine_name": engine_name,
+                "label": "default",
+                "speaker_wav": speaker_wav,
+                "prompt_text": prompt_text,
+                "clone_mode": "reference_only",
+            }
+            validation = validate_voxcpm_reference_audio(
+                str(locked_candidate.get("speaker_wav") or speaker_wav),
+                manifest=locked_candidate,
+                artifact_type="model_candidate",
+                expected_duration_sec=locked_candidate.get("expected_duration_sec"),
+            )
+            if not validation.valid:
+                raise XTTSInferenceError(f"Reference candidate is invalid: {validation.message}")
+            smoke_failures = []
+            qualified_candidates = [locked_candidate]
         else:
+            candidate_plan = candidate_plan[: max(1, int(self.settings.synthesis_smoke_test_candidate_limit))]
+            self._update_job_progress(
+                job,
+                stage="prequalifying_references",
+                percent=8,
+                message=f"Running optional smoke tests for {len(candidate_plan)} reference candidate(s).",
+                total_chunks=len(chunk_texts),
+            )
             qualified_candidates, smoke_failures = _prequalify_candidates(
                 registry=registry,
                 candidate_plan=candidate_plan,
@@ -1132,6 +1237,16 @@ class SynthesisService:
             }
             process = ctx.Process(target=_synthesis_single_chunk_worker, args=(payload, result_queue))
             process.start()
+            self._update_job_progress(
+                job,
+                stage="synthesizing",
+                percent=10 + int((index - 1) / max(len(chunk_texts), 1) * 65),
+                message=f"{self._synthesis_progress_message(engine_name, index, len(chunk_texts))} Worker PID {process.pid or 0} started.",
+                current_chunk=index,
+                total_chunks=len(chunk_texts),
+                worker_pid=process.pid or 0,
+                worker_started_at=self._now_iso(),
+            )
             started_at = time.monotonic()
             event: dict | None = None
 
@@ -1279,7 +1394,47 @@ class SynthesisService:
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _apply_inter_chunk_pauses(self, chunk_paths: list[str], chunk_texts: list[str]) -> list[str]:
+    def _mark_job_timing_completed(self, job: SynthesisJob) -> None:
+        request = json.loads(job.request_json or "{}")
+        completed_at = self._now_iso()
+        started_at = request.get("synthesis_started_at") or completed_at
+        request["synthesis_started_at"] = started_at
+        request["synthesis_completed_at"] = completed_at
+        request["synthesis_elapsed_seconds"] = self._elapsed_seconds(started_at, completed_at)
+        job.request_json = json.dumps(request)
+
+    def _elapsed_seconds(self, start: str | None, end: str | None = None) -> float | None:
+        if not start:
+            return None
+        try:
+            start_dt = self._parse_datetime(start)
+            end_dt = self._parse_datetime(end) if end else datetime.now(timezone.utc)
+            if start_dt is None or end_dt is None:
+                return None
+            return round(max(0.0, (end_dt - start_dt).total_seconds()), 3)
+        except Exception:
+            return None
+
+    def _iso_datetime(self, value) -> str | None:
+        parsed = self._normalize_datetime(value)
+        return parsed.isoformat() if parsed else None
+
+    def _audio_quality_payload(self, *, source_quality, generated_quality, delivery_quality) -> dict:
+        generated_report = generated_quality.to_dict()
+        delivery_report = delivery_quality.to_dict()
+        for field in ("integrated_lufs", "loudness_range_lu", "true_peak_db", "bits_per_sample"):
+            if delivery_report.get(field) is not None:
+                generated_report[field] = delivery_report[field]
+        generated_report["path"] = delivery_report.get("path") or generated_report.get("path")
+        return {
+            "source": source_quality.to_dict(),
+            "generated": generated_report,
+            "delivery": delivery_report,
+            "comparison": self.audio_quality.compare(source_quality, generated_quality),
+            "recommendations": self.audio_quality.recommend_actions(generated_quality, context="generated"),
+        }
+
+    def _apply_inter_chunk_pauses(self, chunk_paths: list[str], chunk_texts: list[str], *, chunk_join_hints: list[str] | None = None) -> list[str]:
         if len(chunk_paths) <= 1:
             return chunk_paths
         try:
@@ -1294,33 +1449,103 @@ class SynthesisService:
             if not path.exists():
                 adjusted_paths.append(chunk_path)
                 continue
-            if index >= len(chunk_paths) - 1:
-                adjusted_paths.append(chunk_path)
-                continue
-            text = chunk_texts[index] if index < len(chunk_texts) else ""
-            pause_ms = self._pause_ms_for_text(text)
             try:
-                audio, sample_rate = sf.read(str(path))
-                if pause_ms <= 0:
-                    adjusted_paths.append(chunk_path)
-                    continue
-                silence_frames = max(1, int(sample_rate * (pause_ms / 1000.0)))
-                if getattr(audio, "ndim", 1) == 1:
-                    silence = np.zeros((silence_frames,), dtype=audio.dtype)
-                else:
-                    silence = np.zeros((silence_frames, audio.shape[1]), dtype=audio.dtype)
-                combined = np.concatenate([audio, silence], axis=0)
+                audio, sample_rate = sf.read(str(path), always_2d=True)
+                processed = self._trim_edge_silence(
+                    audio,
+                    sample_rate,
+                    trim_start=index > 0,
+                    trim_end=index < len(chunk_paths) - 1,
+                )
+                processed = self._apply_edge_fades(
+                    processed,
+                    sample_rate,
+                    fade_in_ms=int(self.settings.synthesis_chunk_fade_ms if index > 0 else 0),
+                    fade_out_ms=int(self.settings.synthesis_chunk_fade_ms if index < len(chunk_paths) - 1 else 0),
+                )
+                if index < len(chunk_paths) - 1:
+                    text = chunk_texts[index] if index < len(chunk_texts) else ""
+                    hint = chunk_join_hints[index] if chunk_join_hints and index < len(chunk_join_hints) else None
+                    pause_ms = self._pause_ms_for_text(text, join_hint=hint)
+                    pause = self._build_comfort_noise_pause(
+                        np=np,
+                        sample_rate=sample_rate,
+                        channels=processed.shape[1],
+                        pause_ms=pause_ms,
+                        seed=index + 17,
+                    )
+                    if pause.size:
+                        processed = np.concatenate([processed, pause], axis=0)
+                adjusted = processed[:, 0] if processed.shape[1] == 1 else processed
                 paused_path = path.with_name(f"{path.stem}-paused{path.suffix}")
-                sf.write(str(paused_path), combined, sample_rate)
+                sf.write(str(paused_path), adjusted, sample_rate)
                 adjusted_paths.append(str(paused_path))
             except Exception:
                 adjusted_paths.append(chunk_path)
         return adjusted_paths
 
-    def _pause_ms_for_text(self, text: str) -> int:
+    def _trim_edge_silence(self, audio, sample_rate: int, *, trim_start: bool, trim_end: bool):
+        try:
+            import numpy as np
+        except Exception:
+            return audio
+        if audio.size == 0:
+            return audio
+        frame_levels = np.max(np.abs(audio), axis=1)
+        threshold = float(10 ** (float(self.settings.synthesis_trim_edge_silence_threshold_dbfs) / 20.0))
+        max_trim_frames = max(0, int(sample_rate * (int(self.settings.synthesis_trim_edge_silence_ms) / 1000.0)))
+        start_index = 0
+        end_index = len(frame_levels)
+        if trim_start:
+            while start_index < min(len(frame_levels), max_trim_frames) and frame_levels[start_index] <= threshold:
+                start_index += 1
+        if trim_end:
+            trimmed = 0
+            while end_index > start_index and trimmed < max_trim_frames and frame_levels[end_index - 1] <= threshold:
+                end_index -= 1
+                trimmed += 1
+        trimmed_audio = audio[start_index:end_index]
+        return trimmed_audio if len(trimmed_audio) else audio
+
+    def _apply_edge_fades(self, audio, sample_rate: int, *, fade_in_ms: int, fade_out_ms: int):
+        try:
+            import numpy as np
+        except Exception:
+            return audio
+        if audio.size == 0:
+            return audio
+        processed = np.array(audio, copy=True)
+        if fade_in_ms > 0:
+            fade_in_frames = min(len(processed), max(1, int(sample_rate * (fade_in_ms / 1000.0))))
+            processed[:fade_in_frames] *= np.linspace(0.15, 1.0, fade_in_frames, dtype=processed.dtype).reshape(-1, 1)
+        if fade_out_ms > 0:
+            fade_out_frames = min(len(processed), max(1, int(sample_rate * (fade_out_ms / 1000.0))))
+            processed[-fade_out_frames:] *= np.linspace(1.0, 0.18, fade_out_frames, dtype=processed.dtype).reshape(-1, 1)
+        return processed
+
+    def _build_comfort_noise_pause(self, *, np, sample_rate: int, channels: int, pause_ms: int, seed: int):
+        if pause_ms <= 0:
+            return np.zeros((0, channels), dtype=np.float32)
+        pause_frames = max(1, int(sample_rate * (pause_ms / 1000.0)))
+        rng = np.random.default_rng(seed)
+        pause = rng.uniform(-4e-5, 4e-5, size=(pause_frames, channels)).astype(np.float32)
+        edge_frames = min(max(1, int(sample_rate * 0.008)), pause_frames)
+        ramp = np.linspace(0.35, 1.0, edge_frames, dtype=np.float32).reshape(-1, 1)
+        pause[:edge_frames] *= ramp
+        pause[-edge_frames:] *= ramp[::-1]
+        return pause
+
+    def _pause_ms_for_text(self, text: str, *, join_hint: str | None = None) -> int:
         trimmed = (text or "").strip()
         if not trimmed:
             return int(self.settings.synthesis_pause_default_ms)
+        normalized_hint = str(join_hint or "").strip().lower()
+        if normalized_hint == "paragraph":
+            return int(self.settings.synthesis_pause_paragraph_ms)
+        if normalized_hint == "clause":
+            return int(self.settings.synthesis_pause_clause_ms)
+        if normalized_hint == "sentence":
+            return int(self.settings.synthesis_pause_sentence_ms)
         if trimmed.endswith((".", "?", "!")):
             return int(self.settings.synthesis_pause_sentence_ms)
         if trimmed.endswith((",", ";", ":")):

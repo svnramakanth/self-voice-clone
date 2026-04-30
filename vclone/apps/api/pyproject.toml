@@ -9,14 +9,29 @@ dependencies = [
   "sqlalchemy>=2.0.30",
   "pydantic>=2.7.0",
   "pydantic-settings>=2.2.1",
-  "python-multipart>=0.0.9",
-  "TTS>=0.22.0",
-  "faster-whisper>=1.0.0",
-  "speechbrain>=1.0.0",
-  "torchaudio>=2.2.0"
+  "python-multipart>=0.0.9"
 ]
 
 [project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5"
+]
+quality = [
+  "numpy>=1.26",
+  "soundfile>=0.12.1",
+  "scipy>=1.11"
+]
+xtts = [
+  "TTS>=0.22.0"
+]
+asr = [
+  "faster-whisper>=1.0.0"
+]
+speaker = [
+  "speechbrain>=1.0.0",
+  "torchaudio>=2.2.0"
+]
 voxcpm = [
   "voxcpm",
   "soundfile>=0.12.1"

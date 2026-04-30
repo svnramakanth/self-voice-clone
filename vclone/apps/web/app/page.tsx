@@ -9,8 +9,8 @@ export default function HomePage() {
         <h1>Clean, minimal flow for saving your voice and generating speech</h1>
         <p className="muted">
           This UI is focused on three steps: upload your sample, confirm your saved profile,
-          and generate output from text. The backend now attempts real XTTS synthesis, faster-whisper
-          transcription/back-check, and speaker-verification hooks when the required ML dependencies are installed.
+          and generate output from text. The backend now runs the local clone pipeline with current
+          engines and optional diagnostics when the required dependencies are installed.
         </p>
         <div className="actions">
           <Link href="/enrollment" className="link-arrow">Start by saving your voice →</Link>
@@ -54,8 +54,8 @@ export default function HomePage() {
             <div className="muted">Backend on <code>localhost:8000</code> and frontend on <code>localhost:3000</code>.</div>
           </div>
           <div className="info-tile">
-            <h4>Current output is mocked</h4>
-            <div className="muted">The flow can generate real XTTS-based audio if backend dependencies are installed, but true native stereo release masters still require a stronger final engine.</div>
+            <h4>Generation is local and dependency-aware</h4>
+            <div className="muted">If the local clone/runtime dependencies are installed, the app generates real audio and reports limitations instead of pretending weak output is production-ready.</div>
           </div>
           <div className="info-tile">
             <h4>What this app optimizes for</h4>
@@ -84,14 +84,14 @@ export default function HomePage() {
             <div className="feature-badge">3</div>
             <div>
               <strong>Synthesis</strong>
-              <div className="muted">Text is normalized, chunked, rendered chunk-by-chunk with XTTS, concatenated, mastered, and packaged as WAV/FLAC. Final mode fails closed if the result is not a true native master.</div>
+              <div className="muted">Text is normalized, chunked for smoother context, rendered with the current clone engine, stitched with gentler pause handling, mastered after stitching, and packaged as WAV/FLAC.</div>
             </div>
           </div>
           <div className="feature-item">
             <div className="feature-badge">4</div>
             <div>
               <strong>Current limitation</strong>
-              <div className="muted">This repo still uses XTTS as the main synthesis engine, so perfect studio-grade native stereo Spotify delivery is not available without integrating a better final renderer.</div>
+              <div className="muted">Weak source audio can still limit naturalness, so the app now favors salvage-first diagnostics and smoother long-form output over reject-heavy gating.</div>
             </div>
           </div>
         </div>
